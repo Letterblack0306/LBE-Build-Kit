@@ -6,7 +6,6 @@ import { retryPlanner }     from "./retryPlanner.js";
 import { stateDiffValidator } from "./stateDiffValidator.js";
 import { resultClassifier } from "./resultClassifier.js";
 import { edeEventBus }      from "./edeEventBus.js";
-import { intentContract }   from "./intentContract.js";
 
 /**
  * OpenClaw Agent Orchestrator
@@ -361,129 +360,6 @@ export const agentOrchestrator = {
 
     edeEventBus.emit("retry.complete", { parentJobId, fromGroupIndex, improvements: diff.improvements.length });
     return stateDiffValidator.merge(planResult, replayResult);
-  },
-
-  // ── Intent-Based Execution (4-Layer Pipeline) ───────────────────────────────
-
-  /**
-   * Execute a single intent through the 4-layer pipeline.
-   * This is the AGENT-FACING entry point.
-   *
-   * Agents submit intents, they don't see the validation layers.
-   * If validation fails, they get a helpful correction message.
-   *
-   * Layer 1: Agent (already done - intent submitted)
-   * Layer 2: Contract Validator (this method)
-   * Layer 3: Controller Core (routes to adapter)
-   * Layer 4: Adapter (executes whitelisted command)
-   *
-   * @param {Object} intentPayload - Agent's structured intent
-   * @param {string} parentJobId - Parent job context
-   * @returns {Object} { ok: boolean, result: any, error: string|null }
-   */
-  async executeIntent(intentPayload, parentJobId) {
-    const intentId = `intent_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-    edeEventBus.emit("intent.received", { intentId, intent: intentPayload.intent });
-    jobManager.logStep(parentJobId, `[intent] received: ${intentPayload.intent} (${intentId})`);
-
-    // ── Layer 2: Contract Validation ─────────────────────────────────────────
-    const validation = intentContract.validate(intentPayload);
-
-    if (!validation.valid) {
-      // Format violations into helpful agent-facing message
-      const errorMessages = validation.violations.map(v => {
-        if (v.type === "STRUCTURE_VIOLATION") {
-          return `Structure error: ${v.message}`;
-        }
-        if (v.type === "UNKNOWN_INTENT") {
-          return `Unknown intent '${intentPayload.intent}'. Try one of: ${intentContract.getAllowedIntents().join(", ")}`;
-        }
-        if (v.type === "CAPABILITY_VIOLATION") {
-          return `Missing permissions: ${v.message}`;
-        }
-        if (v.type === "SECURITY_VIOLATION") {
-          return `Security check failed: ${v.message}. Use structured payloads only.`;
-        }
-        return `${v.type}: ${v.message}`;
-      });
-
-      const error = errorMessages.join("; ");
-      jobManager.logStep(parentJobId, `[intent.rejected] ${error}`);
-      edeEventBus.emit("intent.rejected", { intentId, violations: validation.violations });
-
-      return {
-        ok: false,
-        result: null,
-        error,
-        intentId,
-        layer: "contract"
-      };
-    }
-
-    jobManager.logStep(parentJobId, `[intent.validated] ${intentPayload.intent} approved (risk: ${validation.risk})`);
-
-    // ── Layer 3: Controller Routing ──────────────────────────────────────────
-    // This would route to the appropriate adapter based on intent type
-    // For now, we emit to event bus for the controller to handle
-
-    edeEventBus.emit("intent.approved", {
-      intentId,
-      intent: intentPayload.intent,
-      risk: validation.risk,
-      requiresConfirmation: validation.requiresConfirmation
-    });
-
-    // ── Layer 4: Adapter Execution ─────────────────────────────────────────────
-    // The actual execution happens through toolDispatcher
-    // which routes to registered adapters
-
-    try {
-      const result = await toolDispatcher.executeIntent(
-        intentPayload.intent,
-        intentPayload.payload,
-        { intentId, validation }
-      );
-
-      jobManager.logStep(parentJobId, `[intent.completed] ${intentPayload.intent} executed successfully`);
-      edeEventBus.emit("intent.completed", { intentId, intent: intentPayload.intent });
-
-      return {
-        ok: true,
-        result,
-        error: null,
-        intentId,
-        layer: "adapter"
-      };
-
-    } catch (err) {
-      const error = err?.message ?? String(err);
-      jobManager.logStep(parentJobId, `[intent.failed] ${intentPayload.intent}: ${error}`);
-      edeEventBus.emit("intent.failed", { intentId, intent: intentPayload.intent, error });
-
-      return {
-        ok: false,
-        result: null,
-        error,
-        intentId,
-        layer: "adapter"
-      };
-    }
-  },
-
-  /**
-   * Get documentation for an intent
-   * Agents can call this to understand available intents
-   */
-  getIntentDocumentation(intentName) {
-    return intentContract.getIntentDocs(intentName);
-  },
-
-  /**
-   * List all available intents
-   */
-  listAvailableIntents() {
-    return intentContract.getAllowedIntents();
   },
 
   // ── Internal ───────────────────────────────────────────────────────────────

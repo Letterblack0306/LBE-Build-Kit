@@ -4,7 +4,7 @@
   "description": "Build and dev toolchain for Adobe CEP extensions — init, watch, sync, reload, debug, es3-check, and more.",
   "type": "module",
   "bin": {
-    "ext-build": "./ext-build.mjs"
+    "ext-build": "ext-build.mjs"
   },
   "author": "Letterblack",
   "repository": {
