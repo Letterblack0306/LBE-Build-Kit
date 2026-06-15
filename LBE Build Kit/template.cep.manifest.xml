@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest
+  ExtensionBundleId="{{EXTENSION_ID}}"
+  ExtensionBundleName="{{PROJECT_NAME}}"
+  ExtensionBundleVersion="{{VERSION}}"
+  Version="10.0">
+  <ExtensionList>
+    <Extension Id="{{EXTENSION_ID}}" Version="{{VERSION}}" />
+  </ExtensionList>
+  <ExecutionEnvironment>
+    <HostList>
+      <Host Name="AEFT" Version="[22.0,99.9]" />
+    </HostList>
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="12.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+  <DispatchInfoList>
+    <Extension Id="{{EXTENSION_ID}}">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/hostscript.jsx</ScriptPath>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Menu>{{PROJECT_NAME}}</Menu>
+          <Geometry>
+            <Size>
+              <Width>420</Width>
+              <Height>640</Height>
+            </Size>
+            <MinSize>
+              <Width>320</Width>
+              <Height>320</Height>
+            </MinSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+</ExtensionManifest>

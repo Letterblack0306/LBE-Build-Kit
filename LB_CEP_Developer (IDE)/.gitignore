@@ -1,0 +1,5 @@
+node_modules/
+.build-report/
+.electron-data/
+.ide-session/
+.DS_Store

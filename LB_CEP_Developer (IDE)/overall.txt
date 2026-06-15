@@ -1,0 +1,362 @@
+Full Feature Implementation Checklist (IDE Expansion Roadmap)
+1. Editor System
+
+Tabbed editor (multi-file tabs)
+
+Tab state persistence (open/closed/active)
+
+Dirty state tracking (unsaved changes indicator)
+
+File caching layer (in-memory + optional disk cache)
+
+File reopen session restore
+
+Split editor (horizontal/vertical)
+
+Read-only vs editable modes
+
+2. Code Intelligence Layer
+
+Syntax highlighting engine (custom or embedded tokenizer)
+
+Language detection (by extension)
+
+Token parsing pipeline
+
+Line highlighting (active line, errors, selections)
+
+Bracket matching + scope highlighting
+
+Code folding
+
+Minimap (optional)
+
+Cursor position tracking
+
+3. Suggestions / Autocomplete
+
+Basic autocomplete engine (keywords + file context)
+
+Snippet system (custom user snippets)
+
+Inline suggestions (ghost text)
+
+Suggestion popup UI
+
+Context-aware suggestions (file type based)
+
+Command suggestions (Build Kit commands)
+
+AI-assisted suggestions (future)
+
+4. Command Palette (Ctrl + Shift + P)
+
+Command registry system
+
+Search/filter engine
+
+Fuzzy search matching
+
+Keyboard navigation (↑ ↓ Enter)
+
+Command execution dispatcher
+
+Categorized commands (File, Build Kit, UI, Settings)
+
+Recent commands history
+
+5. Explorer Enhancements
+
+Tree view (nested folders)
+
+Expand/collapse state persistence
+
+File icons (type-based)
+
+Right-click context menu system
+
+Multi-select support
+
+Drag & drop (reorder / move files)
+
+File rename / delete / create
+
+Search within explorer
+
+6. Explorer Context Menu (Critical)
+
+Open file
+
+Reveal in folder
+
+Rename / delete
+
+Duplicate file
+
+Run Build Kit commands:
+
+verify
+
+doctor
+
+build
+
+release
+
+Detect ext-build.config.json → show special actions
+
+Context-aware actions (file vs folder)
+
+7. Build Kit Integration Layer
+
+Command registry mapping (UI ↔ CLI)
+
+Command templates (pre-filled args)
+
+One-click execution from Explorer
+
+Output linking to Debug panel
+
+Report viewer (.build-report)
+
+Command presets
+
+8. Terminal System Upgrade
+
+Multiple terminal sessions (tabs)
+
+Command history navigation
+
+Input parsing (CLI-like)
+
+Persistent logs per session
+
+Clear / restart terminal
+
+Attach terminal to command ID
+
+9. Debug System Expansion
+
+Command timeline visualization
+
+Step-level execution logs
+
+Raw JSON inspector
+
+Error trace viewer
+
+Adapter-level breakdown
+
+Report diff viewer
+
+10. State & Session Management
+
+Global session store
+
+Workspace state persistence
+
+Open files + cursor position restore
+
+Command history persistence
+
+UI layout persistence
+
+11. API Settings Panel
+
+Provider selection:
+
+OpenAI
+
+Gemini
+
+Local LLM
+
+API key management
+
+Endpoint configuration
+
+Model selection dropdown
+
+Temperature / params control
+
+Test connection button
+
+Save profiles
+
+12. Chat Panel (AI Interaction Layer)
+
+Chat UI (threaded messages)
+
+Multi-provider support
+
+Context injection (selected file / code)
+
+Image upload + preview
+
+Drag & drop files/images
+
+Send code blocks directly
+
+Response streaming
+
+Copy / apply response to editor
+
+13. Agent Collaboration Layer
+
+Agent selector (OpenClaw, Gemini, etc.)
+
+Task delegation UI
+
+Multi-agent workflow chaining
+
+Agent response routing
+
+Execution approval system
+
+Shared memory/context between agents
+
+14. File Highlighting System
+
+Active file highlight in explorer
+
+Modified files highlight
+
+Recently opened files highlight
+
+Error file highlighting
+
+Search result highlighting
+
+15. Code Highlighting Features
+
+Active line highlight
+
+Selection highlight
+
+Error/warning underline
+
+Search highlight
+
+Multi-cursor support
+
+Inline annotations (future)
+
+16. Image + Asset Support
+
+Image preview panel
+
+Drag image to chat
+
+Drag image into editor (reference)
+
+Image metadata display
+
+AI image send pipeline
+
+Asset thumbnails in explorer
+
+17. Search System
+
+Global search (Ctrl + Shift + F)
+
+File search
+
+Replace system
+
+Regex support
+
+Highlight matches
+
+18. Keybinding System
+
+Shortcut manager
+
+Custom keybinding config
+
+Default IDE shortcuts:
+
+Ctrl+P (file search)
+
+Ctrl+Shift+P (command palette)
+
+Ctrl+S (save)
+
+Ctrl+/ (comment)
+
+19. UI Framework Enhancements
+
+Dockable panels
+
+Resizable panels
+
+Panel visibility toggles
+
+Floating panels (future)
+
+Theme system (dark/light/custom)
+
+20. Performance Layer
+
+Virtualized rendering (large files)
+
+Debounced updates
+
+Lazy loading explorer
+
+Efficient diff updates
+
+21. Security Layer
+
+Sandboxed API calls
+
+Safe file operations
+
+Permission prompts
+
+API key encryption (local storage)
+
+22. Extension System (Future)
+
+Plugin loader
+
+Custom command registration
+
+UI extension slots
+
+External tool integration
+
+23. Build / Release UI
+
+Release dashboard
+
+Packaging status
+
+Installer generation UI
+
+GitHub release integration
+
+Version manager
+
+24. Notifications System
+
+Toast notifications
+
+Error alerts
+
+Command completion alerts
+
+Background task notifications
+
+25. Logging System
+
+System logs panel
+
+Filter logs by type
+
+Export logs
+
+Strategic Summary
+
+This list represents the transition from:
+
+UI Shell → Developer Tool → Full IDE Platform

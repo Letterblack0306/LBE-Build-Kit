@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light dark;
+  font-family: Segoe UI, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+}
+
+main {
+  display: grid;
+  gap: 12px;
+}
+
+button {
+  width: fit-content;
+  padding: 8px 12px;
+}
+
+pre {
+  padding: 12px;
+  border: 1px solid #8884;
+  border-radius: 8px;
+  white-space: pre-wrap;
+}

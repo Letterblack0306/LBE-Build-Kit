@@ -1,0 +1,104 @@
+{
+  "project": {
+    "name": "My CEP Extension",
+    "type": "cep"
+  },
+  "identity": {
+    "extensionId": "com.example.my-extension"
+  },
+  "paths": {
+    "source": "src",
+    "dist": "dist",
+    "manifest": "src/CSXS/manifest.xml"
+  },
+  "versioning": {
+    "files": [
+      "package.json",
+      "src/CSXS/version.json",
+      "src/CSXS/manifest.xml"
+    ]
+  },
+  "artifacts": {
+    "zxp": true,
+    "windowsExe": false,
+    "macDmg": false
+  },
+  "validation": {
+    "requiredFiles": [
+      "index.html",
+      "CSXS/manifest.xml"
+    ],
+    "forbiddenPatterns": [
+      ".env",
+      "*.map",
+      "manifest.dev.xml",
+      "**/tests/**"
+    ],
+    "requiredEnv": [],
+    "requiredTools": []
+  },
+  "release": {
+    "checksumAlgorithm": "sha256",
+    "tagRequired": false,
+    "outputDir": "release-out",
+    "requiredArtifacts": [],
+    "artifactVersionFiles": [
+      {
+        "path": "CSXS/manifest.xml",
+        "kind": "manifest",
+        "label": "dist manifest",
+        "base": "dist"
+      }
+    ],
+    "bundle": {
+      "requiredFiles": [
+        "index.html",
+        "CSXS/manifest.xml"
+      ],
+      "requiredDirectories": []
+    },
+    "adapters": {
+      "zxp": {
+        "enabled": true,
+        "command": null,
+        "outputPath": null
+      },
+      "inno": {
+        "enabled": false,
+        "command": null,
+        "outputPath": null
+      },
+      "electronDmg": {
+        "enabled": false,
+        "command": null,
+        "outputPath": null
+      },
+      "githubRelease": {
+        "enabled": false,
+        "command": null,
+        "outputPath": null
+      }
+    }
+  },
+  "dev": {
+    "liveMode": "workspace-sync",
+    "source": "src",
+    "extensionId": "com.example.my-extension",
+    "targetDir": null,
+    "buildCommand": null,
+    "debugPort": 8088,
+    "hostName": "AEFT",
+    "csxsVersions": ["12", "11"],
+    "browserUrl": "http://localhost:8088",
+    "syncExcludes": ["node_modules", ".git", ".build-report"],
+    "localServer": {
+      "enabled": false,
+      "root": "src",
+      "port": 3000
+    },
+    "reload": {
+      "panelPatterns": ["**/*.html", "**/*.css", "**/*.js", "**/*.json", "assets/**"],
+        "restartPatterns": ["CSXS/manifest.xml", "**/*.jsx", "jsx/**", ".debug"]
+    }
+  }
+}

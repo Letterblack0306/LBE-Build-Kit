@@ -1,0 +1,618 @@
+Public Build System Plan
+Product Goal
+
+Create a public reusable build framework for Adobe CEP / hybrid extensions that standardizes:
+
+validation
+
+drift detection
+
+packaging orchestration
+
+installer assembly
+
+release bundling
+
+CI integration
+
+Not a replacement for Adobe signing or Apple tooling.
+It is a framework around them.
+
+1. Product Shape
+Proposed Name
+
+LBE Build Kit
+or
+Extension Release Engine
+
+Product Model
+
+Two parts:
+
+A. Core Engine
+
+Reusable for any extension
+
+B. Project Config
+
+Specific to each extension
+
+2. What It Should Support
+Core Commands
+ext-build check
+ext-build verify
+ext-build diff
+ext-build simulate
+ext-build release
+ext-build doctor
+ext-build init
+Command Purpose
+check
+
+runs gates only
+
+no packaging
+
+validates config + paths + version sync
+
+verify
+
+checks build output integrity
+
+confirms required files exist
+
+confirms no forbidden files ship
+
+diff
+
+compares current build vs previous artifact
+
+detects removed / added / changed files
+
+simulate
+
+performs full local release build
+
+produces all artifacts locally
+
+no publish
+
+release
+
+full production orchestration
+
+only for CI or authorized local run
+
+doctor
+
+checks environment
+
+missing secrets
+
+missing tools
+
+wrong OS-specific dependencies
+
+init
+
+scaffolds a new extension project config
+
+3. Framework Architecture
+Layer 1 — Core Engine
+
+Reusable logic only
+
+packages/
+  core/
+    cli/
+    config/
+    pipeline/
+    validators/
+    diff/
+    artifacts/
+    logging/
+
+Responsibilities:
+
+parse config
+
+run steps in order
+
+fail-fast
+
+print structured results
+
+support local + CI modes
+
+Layer 2 — Adapters
+
+Tool-specific wrappers
+
+packages/
+  adapters/
+    zxp/
+    inno/
+    electron-dmg/
+    apple-notary/
+    checksum/
+    github-release/
+
+Responsibilities:
+
+call external tools
+
+normalize outputs
+
+surface errors consistently
+
+Layer 3 — Extension Profile
+
+Per-project declarative config
+
+ext-build.config.json
+
+Example:
+
+{
+  "name": "Letterblack GenAI",
+  "extensionId": "com.letterblack.genai",
+  "versionFiles": [
+    "package.json",
+    "src/CSXS/version.json",
+    "tools/config/identity.config.json"
+  ],
+  "distPath": "dist",
+  "manifestPath": "src/CSXS/manifest.xml",
+  "requiredFiles": [
+    "index.html",
+    "CSXS/manifest.xml",
+    "jsx/LB_DocablePanel.jsx"
+  ],
+  "forbiddenPatterns": [
+    ".env",
+    "*.map",
+    "manifest.dev.xml",
+    "**/tests/**"
+  ],
+  "artifacts": {
+    "zxp": true,
+    "windowsExe": true,
+    "macDmg": true
+  }
+}
+Layer 4 — Project Plugins
+
+Feature-specific checks
+
+plugins/
+  gate-runtime-boundary.mjs
+  gate-host-range.mjs
+  gate-scriptui.mjs
+  gate-license-flow.mjs
+
+This is how public users extend it without editing core.
+
+4. Public Template Structure
+Monorepo Layout
+ext-build-kit/
+  packages/
+    core/
+    adapters/
+    templates/
+  docs/
+  examples/
+    cep-basic/
+    cep-scriptui-hybrid/
+    electron-installer/
+  schemas/
+  scripts/
+  .github/
+Template for End Users
+my-extension/
+  src/
+  jsx/
+  assets/
+  tools/
+  ext-build.config.json
+  package.json
+  .github/workflows/release.yml
+5. Use Your Current Extension as the Reference Model
+
+Your current extension should become the reference implementation, not the framework itself.
+
+Extract from current extension:
+
+drift gates
+
+artifact completeness checks
+
+version consistency checks
+
+release integrity logic
+
+installer policy checks
+
+runtime boundary validation concepts
+
+secret-surface rules
+
+dual-scope install checks
+
+Split Features into Two Groups
+A. Generic Features
+
+Reusable publicly
+
+version sync
+
+artifact completeness
+
+forbidden file scan
+
+manifest consistency
+
+release integrity
+
+checksum creation
+
+bundle structure validation
+
+CI preflight
+
+B. Product-Specific Features
+
+Stay extension-specific
+
+provider logic
+
+Gumroad flow
+
+AE-specific runtime behavior
+
+LBE business logic
+
+license UI behavior
+
+model registry
+
+proprietary execution paths
+
+6. Best Public Design Principle
+Do not expose your app internals as the framework
+
+Instead:
+
+Current extension = reference project
+Framework = extracted infrastructure layer
+
+That keeps:
+
+public package clean
+
+proprietary logic private
+
+framework reusable
+
+7. Public Feature Set
+Minimum Viable Public Version
+Phase 1
+
+config loader
+
+check
+
+verify
+
+doctor
+
+required-files gate
+
+forbidden-files gate
+
+version-sync gate
+
+manifest ID gate
+
+Phase 2
+
+diff
+
+simulate
+
+checksum generation
+
+bundle validation
+
+release metadata
+
+GitHub Actions templates
+
+Phase 3
+
+installer adapters
+
+zxp adapter
+
+dmg adapter
+
+GitHub Release publish adapter
+
+plugin system
+
+Phase 4
+
+visual report output
+
+JSON report export
+
+HTML release audit report
+
+project scaffolder
+
+8. Public Configuration Model
+Required Config Sections
+{
+  "project": {},
+  "identity": {},
+  "paths": {},
+  "versioning": {},
+  "artifacts": {},
+  "validation": {},
+  "release": {}
+}
+Recommended Sections
+project
+
+name
+
+description
+
+type
+
+identity
+
+extensionId
+
+bundleId
+
+brand name
+
+paths
+
+dist
+
+source
+
+manifest
+
+jsx
+
+assets
+
+versioning
+
+source files
+
+tag format
+
+artifacts
+
+zxp
+
+exe
+
+dmg
+
+bundle zip
+
+validation
+
+required files
+
+forbidden files
+
+required secrets
+
+host version rules
+
+release
+
+checksum rules
+
+naming rules
+
+publish strategy
+
+9. Build Pipeline Structure
+Internal Pipeline
+load config
+→ doctor
+→ source validation
+→ version sync
+→ build output validation
+→ artifact generation
+→ artifact verification
+→ bundle assembly
+→ bundle verification
+→ publish
+
+Each stage should be a separate module.
+
+10. Public Output Contracts
+
+Every run should generate:
+
+.build-report/
+  summary.json
+  summary.txt
+  artifacts.json
+  drift-report.json
+  checksums.txt
+  release-metadata.json
+
+This makes it usable by:
+
+humans
+
+CI
+
+future dashboards
+
+external tooling
+
+11. Recommended Public Documentation
+Docs Set
+docs/
+  getting-started.md
+  config-reference.md
+  commands.md
+  adapters.md
+  plugin-api.md
+  ci-setup.md
+  release-flow.md
+  troubleshooting.md
+  migration-from-custom-builds.md
+Examples
+
+Include 3 public sample projects:
+
+Example 1
+
+Basic CEP extension
+
+Example 2
+
+CEP + ScriptUI hybrid
+
+Example 3
+
+CEP + Windows installer + mac installer
+
+12. Licensing Strategy
+
+If public:
+
+Best option
+
+Core framework: MIT or Apache-2.0
+
+Proprietary project adapters: private if needed
+
+If you want commercial control:
+
+open-source core
+
+paid premium adapters/templates
+
+paid CI presets
+
+paid enterprise support
+
+13. Migration Plan From Your Current Extension
+Step 1
+
+Identify all current reusable gates
+
+Step 2
+
+Move them into:
+
+packages/core/validators
+Step 3
+
+Move current project-specific values into:
+
+ext-build.config.json
+Step 4
+
+Replace hardcoded project paths with config-driven resolution
+
+Step 5
+
+Convert current release flow into pipeline modules
+
+Step 6
+
+Keep current extension as the first official example
+
+14. What Public Users Will Experience
+New user flow
+npx ext-build init
+npx ext-build check
+npx ext-build simulate
+npx ext-build release
+
+This is the correct public usability target.
+
+15. Strong Recommendation
+Build it as:
+Framework + adapters + config + example projects
+
+Not as:
+
+one giant script copied from your extension
+
+That is the difference between:
+
+reusable public tooling
+
+private project automation
+
+16. Final Recommended Repo Structure
+ext-build-kit/
+  packages/
+    core/
+      cli/
+      pipeline/
+      validators/
+      utils/
+    adapters/
+      zxp/
+      inno/
+      electron-dmg/
+      github-release/
+    templates/
+      cep-basic/
+      cep-hybrid/
+  schemas/
+    ext-build.schema.json
+  examples/
+    letterblack-reference/
+    simple-cep/
+    hybrid-extension/
+  docs/
+  package.json
+17. Final Direction
+Best path
+
+extract reusable gates from current extension
+
+design config schema
+
+build command runner
+
+add adapters
+
+publish with examples
+
+keep your extension as the reference project
+
+Development use cases
+
+ext-build check → validate while coding
+
+ext-build watch → detect drift during development
+
+ext-build doctor → environment/tool check
+
+ext-build dev-verify → confirm dev build is still structurally valid
+
+ext-build simulate → pre-release local test
+
+Best model
+dev mode → fast checks
+release mode → strict full pipeline
+Recommended extra commands
+ext-build watch
+ext-build dev
+ext-build dev-verify

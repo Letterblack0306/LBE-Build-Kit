@@ -1,0 +1,57 @@
+End-to-End System Execution Flow
+The system operates through three clean, automated mechanics: Environment Initialization, Runtime Bidirectional Messaging, and Compilation Pruning. This design operates at the OS, socket, and compiler levels to eliminate manual configuration, reduce latency, and secure the final distribution.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. ENVIRONMENT INITIALIZATION                                               │
+│                                                                             │
+│ ──► Auto-writes Registry/Defaults (Debug Flag = 1)    │
+│                       ──► Auto-generates local.debug (Host Port Mappings)  │
+└─────────────────────────────────────┬───────────────────────────────────────┘
+                                      │ Launches Target Host
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. RUNTIME BIDIRECTIONAL MESSAGING (Localhost Bridge)                       │
+│                                                                             │
+│ [Native Host Process]  ◄───────────►               │
+│ (JSON Telemetry Payload)  (Local Loopback Endpoint)        │
+└─────────────────────────────────────┬───────────────────────────────────────┘
+                                      │ Triggers Production Build
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. COMPILE-TIME PRUNING (AST Reduction)                                     │
+│                                                                             │
+│ ──► Preprocessor AST Scan (Matches #if DEV Blocks)  │
+│                         ──► Strips Debug Logic ──► Zero-Leak Production ZXP  │
+└─────────────────────────────────────────────────────────────────────────────┘
+1. Environment Initialization (Bypassing Security Sandbox)
+To enable testing without security warnings or strict digital signature blocks, the system automates environment setup before loading target applications:
+
+Operating System Registration: The local helper directly edits the target system parameters. On Windows, it creates a registry key string (PlayerDebugMode with a value of 1) at HKEY_CURRENT_USER/Software/Adobe/CSXS.[Version]. On macOS, it calls the system configuration utility (defaults write com.adobe.CSXS.[Version] PlayerDebugMode 1) to enable the debug flags globally.
+
+Dynamic Port Allocation: Upon scanning the active folder structure, the system generates a local .debug XML configuration file at the root. This file binds the specific application ID to static debugging ports.  
+
+Automated Target Detection: When the target application launches, the system bypasses standard signature checks. It exposes a local debug portal on the assigned port, allowing developer tools to read diagnostic targets immediately without manual intervention.  
+
+2. Runtime Bidirectional Messaging (High-Speed Local Socket Bridge)
+To avoid the CPU-intensive and slow process of writing temporary files to disk or polling files repeatedly , the system utilizes a lightweight loopback communication bridge:  
+
+Host Socket Server: During active execution, the runtime panel initiates a local loopback server directly within its process thread.
+
+Direct Channel Client: Native binaries or other background helpers establish a direct TCP connection to this designated local port, functioning as socket clients.
+
+Serialized Event Bus: All diagnostic events, timeline adjustments, and remote actions are serialized into structured JSON objects and piped directly across the TCP stream. This ensures sub-millisecond execution latency. Because the connection remains bound strictly to the local network loopback interface (localhost), it bypasses external cross-origin security blocks and protects against remote network intrusion.  
+
+3. Compile-Time Pruning (Eliminating Production Leaks)
+To ensure that internal developer utilities, testing code, local IP addresses, and private debug endpoints are never shipped to customers, the build process strips code at the parser level before packaging :  
+
+Syntactic Analysis (AST Scan): When a production build is initiated, the system maps the entire codebase into an Abstract Syntax Tree (AST), which represents the program's logical nodes.
+
+Conditional Preprocessing: Instead of using standard runtime checks (which leave dead code inside compiled packages), the compiler scans the AST for preprocessor annotations. For example:
+
+JavaScript
+// #if DEV
+setupLocalDebuggerHost("localhost:8088");
+// #endif
+AST Node Stripping: If compiling for production, the compiler evaluates the condition as false and physically prunes those nodes from the tree before generating the final bundle. The stripped code is never translated into output files.
+
+Flat Assembly Packaging: The resulting cleaned JavaScript and CSS chunks are compiled down into a flat directory structures and bundled into a securely signed archive, ready for safe production deployment.

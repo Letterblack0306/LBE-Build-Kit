@@ -1,0 +1,161 @@
+{
+  "version": "1.0",
+  "description": "Capability map for CEP IDE operations",
+  "capabilities": {
+    "project:read": {
+      "description": "Read project files and structure",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "project:write": {
+      "description": "Modify project files",
+      "risk": "medium",
+      "requiresConfirmation": false,
+      "maxOpsPerAction": 50
+    },
+    "project:delete": {
+      "description": "Delete project files",
+      "risk": "high",
+      "requiresConfirmation": true
+    },
+    "template:read": {
+      "description": "Read template files",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "extendscript:write": {
+      "description": "Write ExtendScript (.jsx) files",
+      "risk": "medium",
+      "requiresConfirmation": false,
+      "validationRequired": ["es3-compatible"]
+    },
+    "manifest:write": {
+      "description": "Write CEP manifest.xml",
+      "risk": "medium",
+      "requiresConfirmation": false
+    },
+    "dev:execute": {
+      "description": "Run dev server",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "build:execute": {
+      "description": "Run build process",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "verify:execute": {
+      "description": "Run verification checks",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "release:execute": {
+      "description": "Create release package",
+      "risk": "medium",
+      "requiresConfirmation": true
+    },
+    "debug:execute": {
+      "description": "Execute debug operations",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "sync:execute": {
+      "description": "Sync to CEP extensions folder",
+      "risk": "low",
+      "requiresConfirmation": false
+    },
+    "cep:execute": {
+      "description": "Execute CEP runtime commands",
+      "risk": "medium",
+      "requiresConfirmation": false
+    },
+    "ai:stream": {
+      "description": "Stream AI completions",
+      "risk": "low",
+      "requiresConfirmation": false
+    }
+  },
+  "intentCapabilities": {
+    "analyze_project": {
+      "capabilities": ["project:read"],
+      "risk": "low"
+    },
+    "analyze_comp": {
+      "capabilities": ["project:read", "cep:execute"],
+      "risk": "low"
+    },
+    "scaffold_extension": {
+      "capabilities": ["project:write", "template:read"],
+      "risk": "medium",
+      "maxOpsPerAction": 20
+    },
+    "add_jsx_script": {
+      "capabilities": ["project:write", "extendscript:write"],
+      "risk": "medium",
+      "validationRequired": ["es3-compatible"]
+    },
+    "update_manifest": {
+      "capabilities": ["project:write", "manifest:write"],
+      "risk": "medium"
+    },
+    "organize_project": {
+      "capabilities": ["project:read", "project:write"],
+      "risk": "medium",
+      "maxOpsPerAction": 30
+    },
+    "run_dev": {
+      "capabilities": ["dev:execute"],
+      "risk": "low"
+    },
+    "run_build": {
+      "capabilities": ["build:execute"],
+      "risk": "low"
+    },
+    "run_verify": {
+      "capabilities": ["verify:execute"],
+      "risk": "low"
+    },
+    "run_release": {
+      "capabilities": ["release:execute"],
+      "risk": "high",
+      "requiresConfirmation": true
+    },
+    "debug_extension": {
+      "capabilities": ["debug:execute"],
+      "risk": "low"
+    },
+    "sync_workspace": {
+      "capabilities": ["sync:execute"],
+      "risk": "low"
+    },
+    "chat_with_ai": {
+      "capabilities": ["ai:stream"],
+      "risk": "low"
+    }
+  },
+  "riskLevels": {
+    "low": {
+      "description": "Read-only or reversible operations",
+      "auditLevel": "standard"
+    },
+    "medium": {
+      "description": "Creates or modifies files",
+      "auditLevel": "detailed",
+      "requiresAuditTrail": true
+    },
+    "high": {
+      "description": "Deletes, overwrites, or releases",
+      "auditLevel": "full",
+      "requiresConfirmation": true,
+      "requiresAuditTrail": true
+    }
+  },
+  "constraints": {
+    "MAX_FOLDERS_PER_REQUEST": 10,
+    "MAX_FILES_PER_REQUEST": 50,
+    "MAX_CONCURRENT_OPERATIONS": 5,
+    "BLOCK_PATH_TRAVERSAL": true,
+    "BLOCK_ABSOLUTE_PATHS": true,
+    "REQUIRE_RELATIVE_PATHS": true
+  }
+}

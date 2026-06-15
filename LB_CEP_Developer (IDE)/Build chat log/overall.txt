@@ -1,0 +1,4246 @@
+. System Architecture — Clear Separation Model
+
+Your current system is structured into two independent but coordinated layers:
+
+IDE Layer (Product / UX Surface)
+Project: LB_CEP_Developer (IDE)
+Responsibility:
+UI shell (VSCode-like)
+Explorer, editor, debug panels
+Command rendering
+User interaction layer
+Status:
+Phase 1 shell complete with bridge
+Key principle:
+Acts as a client to the Build Kit engine
+Engine Layer (Execution Core)
+Project: LBE Build Kit
+Responsibility:
+Command execution (ext-build)
+Validators
+Config loading
+Adapters (dev + release)
+Reporting
+Status:
+Modular extraction in progress (packages/core, adapters)
+Integration Contract
+IDE → sends command
+Build Kit → executes + validates
+Build Kit → returns structured result
+IDE → renders result
+
+This contract is explicitly enforced and must not be violated
+
+2. Governance Rules (Critical Constraints)
+Hard Separation (Non-Negotiable)
+IDE must never replicate Build Kit logic
+Build Kit must remain pure execution engine
+
+This is explicitly enforced:
+
+“Do not duplicate Build Kit logic inside the IDE project”
+
+Territory Ownership
+Component	Owner
+IDE Shell / UX	Codex
+Build Kit Engine	Gemini
+Prevents overlap and architectural drift
+Ensures clean scaling of both layers
+Coordination Layer
+
+Shared files act as control plane:
+
+Agents.md
+Rules.md
+PROJECT_STATUS.md
+
+These are:
+
+Not execution code
+Not business logic
+Only coordination + governance
+3. Current Progress Snapshot
+IDE (Codex)
+
+Completed
+
+IDE scaffold
+Preview server
+VSCode-style shell
+Controlled Build Kit bridge
+Command result rendering
+
+In Progress
+
+Bridge integration refinement
+
+Pending
+
+Explorer (file system model)
+Session state
+Debug browser
+Command history
+
+
+
+
+Build Kit (Gemini)
+
+Current Phase
+
+Modular extraction (Plan 2)
+
+Focus Areas
+
+packages/core abstraction
+Adapter separation
+Maintain stable command interface
+
+Constraint
+
+No breaking changes to IDE contract during refactor
+
+4. System Maturity Assessment
+Strengths (Well-Aligned)
+Clean engine vs interface separation
+Defined ownership boundaries
+Stable command contract
+No architectural drift detected
+Clear phased execution
+Gaps (Strategic, Not Structural)
+1. Missing State Layer (IDE)
+No session persistence
+No command history tracking
+No workspace memory model
+
+→ This limits IDE from becoming a true “developer environment”
+
+2. Missing Observability Layer
+Build Kit returns results
+But no:
+Execution timeline
+Debug traces
+Structured logs visualization
+
+→ Needed for debugging + trust
+
+3. No Unified Execution Narrative
+
+You have:
+
+Command → Result
+
+But missing:
+
+Intent → Validation → Execution → Outcome visibility chain
+
+(This becomes critical when integrating OpenClaw / agents later)
+
+4. Agent Layer Not Yet Integrated
+
+From your broader system direction:
+
+OpenClaw = executor
+Sentinel = validator/governance
+
+But current system:
+
+Build Kit = execution engine
+No agent orchestration layer yet
+5. Immediate Strategic Next Step (High Impact)
+Priority: IDE Evolution → “Control Surface”
+
+Focus on:
+
+A. Explorer + Session Model
+File tree (real or virtual)
+Active workspace context
+Command memory
+B. Command Lifecycle UI
+
+Instead of:
+
+Run → Output
+
+Move to:
+
+Command Issued
+→ Validation Stage
+→ Execution Stage
+→ Result
+→ Logs
+C. Debug Browser Panel
+Show:
+Raw Build Kit output
+Validation stages
+Adapter path used
+Errors with trace
+6. How This Connects to Your Bigger Vision
+
+This system is already aligned with your long-term architecture:
+
+Future Layer	Current Equivalent
+OpenClaw (Executor)	Build Kit
+Sentinel (Validator)	Build Kit validators
+IDE Control Panel	LB_CEP_Developer
+
+You are effectively building:
+
+A deterministic execution interface for AI-driven systems
+
+7. Clean System Flow (Final Model)
+User / Agent (future OpenClaw)
+        ↓
+IDE (LB_CEP_Developer)
+        ↓
+Command Contract
+        ↓
+Build Kit
+   → Validation
+   → Execution
+   → Adapter
+        ↓
+Structured Result
+        ↓
+IDE Rendering (UI + Debug + Logs)
+8. Key Enforcement Rule Going Forward
+
+Do not allow this drift:
+
+❌ IDE starts executing logic
+❌ Build Kit starts handling UI concerns
+
+Maintain:
+
+✔ IDE = orchestration + visualization
+✔ Build Kit = deterministic execution engine
+
+If required, next step can be:
+
+Designing Explorer + Session architecture (with data model + UI layout)
+Or mapping this system directly to OpenClaw integration flow (browser + local LLM + AE bridge)
+ Project 1: LBE Build Kit
+
+  Location: LBE Build Kit/
+  Role: The engine — a public, reusable CLI tool for building and releasing Adobe CEP extensions.
+
+  What it does:
+  - 14 commands: doctor, check, verify, dev, sync, reload, debug, simulate, release, etc.
+  - Modular architecture: packages/core/ (CLI logic) + packages/adapters/ (ZXP, Inno Setup, DMG, GitHub Release)
+  - Reads ext-build.config.json, outputs structured JSON reports to .build-report/
+  - Entry point: ext-build.mjs
+
+  Current state: Core + dev adapters validated, local staging workflow working. Next: wire real ZXP/Inno/DMG packaging.
+
+  ---
+  Project 2: LB_CEP_Developer (IDE)
+
+  Location: LB_CEP_Developer (IDE)/
+  Role: The UI shell — a VSCode-like IDE frontend for CEP extension development.
+
+  What it does:
+  - Local HTTP server on 127.0.0.1:4173 (scripts/dev-server.mjs)
+  - Bridge (scripts/build-kit-bridge.mjs) calls Build Kit CLI via spawnSync and parses JSON
+  - VSCode-like HTML/CSS/JS shell with panels: Explorer, Editor, Terminal, Debug
+  - Exposes /api/status and /api/command endpoints
+
+  Current state: Phase 1 shell + bridge working. Next: file explorer, session state, debug browser panel.
+
+  ---
+  Relationship
+
+  IDE UI (port 4173)
+    → IDE Bridge (spawnSync)
+      → Build Kit CLI (ext-build.mjs)
+        → Core + Adapters
+
+  Contract: IDE calls Build Kit through CLI/JSON only — no logic duplication. Build Kit keeps command names and output
+  schema stable; IDE owns all UX
+System Alignment Review — LBE Build Kit + LB_CEP_Developer (IDE)
+
+The architecture is correctly positioned as a two-layer execution system with a strict contract boundary. The separation is clean, scalable, and consistent with a production-grade tooling pipeline.
+
+1. Structural Validation
+Layer 1 — Build Kit (Execution Engine)
+
+Positioning:
+A reusable, CLI-driven release engineering engine
+
+Core Capabilities
+Command-driven pipeline (14 commands)
+Config-driven execution (ext-build.config.json)
+Structured output (.build-report/)
+Adapter-based extensibility
+Internal Architecture
+packages/
+  core/        → command orchestration, validation, reporting
+  adapters/    → platform-specific execution (ZXP, DMG, etc.)
+Entry Point
+ext-build.mjs (CLI interface)
+Current Maturity
+Core logic stable
+Dev adapters validated
+Local workflows functional
+Packaging adapters pending integration
+Layer 2 — IDE (Control Surface)
+
+Positioning:
+A developer-facing orchestration UI (not an execution engine)
+
+Core Capabilities
+Local server (127.0.0.1:4173)
+Command dispatch via bridge
+Structured response rendering
+VSCode-like interaction model
+API Surface
+/api/status
+/api/command
+Bridge Behavior
+Uses spawnSync
+Executes CLI commands
+Parses JSON output
+Returns structured response to UI
+Contract Enforcement (Correctly Defined)
+IDE → CLI → Build Kit → JSON → IDE
+
+Key rule:
+
+No execution logic crosses into IDE
+
+This is correctly maintained and must remain immutable.
+
+2. Flow Validation (Execution Pipeline)
+Current Flow
+User Action (IDE UI)
+        ↓
+IDE Bridge (spawnSync)
+        ↓
+ext-build.mjs (CLI)
+        ↓
+Core Command Handler
+        ↓
+Adapters (if needed)
+        ↓
+.build-report (JSON)
+        ↓
+Bridge parses output
+        ↓
+IDE renders result
+
+This is:
+
+Deterministic
+Traceable
+Replaceable (CLI can be swapped independently)
+3. Strength Analysis
+1. Clear Responsibility Split
+IDE = orchestration + visualization
+Build Kit = execution + validation
+2. CLI as Stable Interface
+Enables:
+Automation
+CI/CD usage
+Future agent integration
+3. Adapter-Based Design
+Scales to:
+New packaging systems
+New deployment targets
+Platform-specific workflows
+4. Structured Output (.build-report)
+Enables:
+Debug UI
+Audit trail
+Automation hooks
+4. Critical Gaps (Actionable)
+A. CLI → IDE Communication Limitation
+Current Issue
+spawnSync is:
+Blocking
+No streaming
+No progress visibility
+Impact
+No real-time feedback
+Poor UX for long commands (e.g., release)
+Upgrade Path
+
+Replace with:
+
+spawn (async) + stdout streaming
+
+Add:
+
+Progress events
+Partial logs
+Status updates
+B. Missing Execution State Model (IDE)
+Current
+Stateless command calls
+Required
+
+Introduce:
+
+{
+  "commandId": "uuid",
+  "status": "running | success | error",
+  "startedAt": "...",
+  "logs": [],
+  "result": {}
+}
+Benefit
+Enables:
+Debug panel
+History
+Retry
+Multi-command tracking
+C. No Command Lifecycle Visualization
+Current UX
+Run → Output
+Required UX
+Command Issued
+→ Validation
+→ Execution
+→ Adapter
+→ Result
+→ Logs
+Source of Truth
+.build-report/ already contains structure → leverage it
+D. Adapter Integration Gap (Build Kit)
+Missing
+ZXP packaging
+Inno Setup (Windows installer)
+DMG (macOS)
+GitHub release automation
+Risk
+System remains “development-only” without full release pipeline
+E. No Error Normalization Layer
+Current Risk
+Adapters may output inconsistent error formats
+Required
+
+Standardize:
+
+{
+  "success": false,
+  "error": {
+    "code": "ZXP_SIGN_FAILED",
+    "message": "...",
+    "details": "...",
+    "stage": "adapter:zxp"
+  }
+}
+5. Strategic Upgrade Roadmap
+Phase 2 — Execution Visibility (High Priority)
+IDE
+Async command execution (spawn)
+Log streaming
+Command state tracking
+Debug panel (raw JSON + logs)
+Build Kit
+Ensure all commands output:
+step-level logs
+consistent JSON schema
+Phase 3 — Release Pipeline Completion
+Implement Adapters
+ZXP packaging
+Inno Setup
+DMG builder
+GitHub Releases
+Add Commands
+ext-build release
+ext-build package
+ext-build publish
+Phase 4 — Agent Compatibility (Future-Ready)
+
+Prepare Build Kit for:
+
+Agent (OpenClaw)
+   ↓
+CLI (Build Kit)
+   ↓
+Deterministic Output
+Requirements
+Strict schema validation
+No side-effects outside command scope
+Full audit trail
+6. Future Integration Insight (Important)
+
+Your current system is already aligned with:
+
+OpenClaw → IDE → Build Kit → AE / OS
+
+Where:
+
+IDE becomes optional (UI layer)
+Build Kit becomes universal execution engine
+OpenClaw becomes decision layer
+7. Final System Positioning
+
+This is not just:
+
+A CEP tool
+A developer IDE
+
+This is:
+
+A contract-driven build and execution platform for creative tooling
+
+8. Immediate Action (Recommended Next Step)
+
+Focus on:
+
+IDE Side
+Replace spawnSync → async execution with streaming
+Implement command state manager
+Build Debug Panel (JSON + logs)
+Build Kit Side
+Lock JSON schema
+Begin ZXP adapter integration
+
+If required, next step can be:
+
+Designing command state manager (data model + UI mapping)
+Or implementing async bridge with streaming logs (code-level plan)
+yes
+Next Step Package: Command State Manager + Async Bridge
+
+This is the correct next implementation block. It upgrades the IDE from a static shell into an actual execution surface, while keeping the Build Kit contract intact. The separation rule remains unchanged: the IDE manages UX state, the Build Kit remains the engine.
+
+1. Target Outcome
+
+Move from this:
+
+Button click
+→ spawnSync
+→ wait
+→ full JSON result
+→ render
+
+To this:
+
+Button click
+→ async command launch
+→ running state created
+→ live stdout/stderr streamed
+→ final JSON parsed
+→ state finalized
+→ UI panels updated
+
+This fits the current IDE direction and the pending debug-browser / session UX work already identified in your project files.
+
+2. Architecture Update
+Existing
+IDE UI
+  → /api/command
+    → build-kit-bridge.mjs
+      → spawnSync(ext-build.mjs)
+Updated
+IDE UI
+  → /api/command/start
+    → build-kit-bridge.mjs
+      → spawn(ext-build.mjs)
+
+IDE UI
+  → /api/command/stream?id=...
+    → SSE / long-poll stream for logs + status
+
+IDE UI
+  → /api/command/result?id=...
+    → final normalized payload
+3. Command State Manager Design
+
+The IDE needs an in-memory execution registry.
+
+Core State Shape
+{
+  "id": "cmd_20260320_001",
+  "command": "doctor",
+  "args": [],
+  "status": "queued",
+  "phase": "init",
+  "startedAt": "2026-03-20T10:00:00.000Z",
+  "endedAt": null,
+  "exitCode": null,
+  "stdout": [],
+  "stderr": [],
+  "logs": [],
+  "result": null,
+  "error": null,
+  "reportPath": null
+}
+Recommended Fields
+Field	Purpose
+id	unique command instance ID
+command	Build Kit command name
+args	command arguments
+status	queued / running / success / error / killed
+phase	UI-friendly lifecycle stage
+startedAt / endedAt	timing + history
+stdout / stderr	raw process lines
+logs	normalized event stream
+result	parsed final JSON
+error	normalized error object
+reportPath	path to .build-report artifact if returned
+4. State Lifecycle
+Status Flow
+queued
+→ starting
+→ running
+→ parsing-result
+→ success | error
+Phase Flow
+init
+→ process-spawned
+→ streaming-output
+→ awaiting-exit
+→ parsing-json
+→ completed
+
+This gives the Debug panel a deterministic timeline even before the Build Kit exposes deeper step-level events.
+
+5. API Contract for IDE Server
+A. Start Command
+POST /api/command/start
+
+Request:
+
+{
+  "command": "doctor",
+  "args": []
+}
+
+Response:
+
+{
+  "ok": true,
+  "id": "cmd_20260320_001",
+  "status": "starting"
+}
+B. Stream Command Events
+GET /api/command/stream?id=cmd_20260320_001
+
+Use SSE. Events:
+
+event: status
+data: {"status":"running","phase":"process-spawned"}
+
+event: stdout
+data: {"line":"[info] Running doctor..."}
+
+event: stderr
+data: {"line":"[warn] Missing optional tool..."}
+
+event: result
+data: {"status":"success"}
+
+event: done
+data: {"id":"cmd_20260320_001"}
+C. Read Final Result
+GET /api/command/result?id=cmd_20260320_001
+
+Response:
+
+{
+  "id": "cmd_20260320_001",
+  "status": "success",
+  "exitCode": 0,
+  "result": {},
+  "error": null,
+  "reportPath": ".build-report/doctor.json"
+}
+D. Optional History Endpoint
+GET /api/commands
+
+Returns recent command sessions for Terminal / Debug history.
+
+6. Bridge Implementation Strategy
+Replace spawnSync with spawn
+
+In scripts/build-kit-bridge.mjs, use async child process execution.
+
+Responsibilities of bridge
+launch child process
+assign command ID
+append stdout/stderr line-by-line
+detect exit code
+parse final JSON safely
+normalize errors
+expose state to server endpoints
+7. Parsing Strategy
+
+Build Kit outputs structured JSON, but stdout may also contain logs. Since schema stability is important, the bridge should parse defensively.
+
+Recommended rule
+
+Treat the last valid JSON block as the final result.
+
+Safer option
+
+Have Build Kit emit one explicit tagged line:
+
+__EXT_BUILD_JSON__{"success":true,...}
+
+Then the bridge extracts only that line for final parsing.
+
+This avoids corruption from mixed logs.
+
+8. Normalized Error Model
+
+Use one IDE-facing error structure regardless of source.
+
+{
+  "code": "PROCESS_EXIT_NONZERO",
+  "message": "Build Kit command failed",
+  "details": "exit code 1",
+  "stage": "bridge",
+  "raw": null
+}
+
+Adapter/build errors can also map into this shape:
+
+{
+  "code": "ZXP_SIGN_FAILED",
+  "message": "ZXP signing failed",
+  "details": "Certificate not found",
+  "stage": "adapter:zxp",
+  "raw": {}
+}
+Minimum stages
+bridge
+cli
+core
+adapter:zxp
+adapter:inno
+adapter:dmg
+config
+reporting
+9. Frontend UI Mapping
+Explorer
+
+No change yet.
+
+Terminal Panel
+
+Render:
+
+live stdout
+stderr
+command input history
+timestamps
+Debug Panel
+
+Render:
+
+command metadata
+current status
+lifecycle phase
+parsed JSON result
+normalized error
+raw .build-report path
+Status Bar
+
+Show:
+
+idle / running / success / failed
+active command count
+Session Store
+
+Track:
+
+active command ID
+recent commands
+selected debug session
+10. Recommended Frontend Store Shape
+{
+  commands: {
+    byId: {},
+    allIds: []
+  },
+  activeCommandId: null,
+  terminal: {
+    lines: [],
+    history: []
+  },
+  debug: {
+    selectedCommandId: null
+  }
+}
+11. Session Persistence
+
+Phase 1 can be in-memory only.
+
+Phase 2 should persist lightweight session metadata to a local file:
+
+LB_CEP_Developer (IDE)/.ide-session/session.json
+
+Persist:
+
+recent commands
+panel state
+selected command
+last known result summaries
+
+Do not persist full raw stdout forever unless needed.
+
+12. Suggested File Additions
+
+Inside LB_CEP_Developer (IDE):
+
+scripts/
+  build-kit-bridge.mjs
+  command-registry.mjs
+  command-events.mjs
+
+src/js/
+  state/
+    commandStore.js
+  services/
+    commandApi.js
+    sseClient.js
+  panels/
+    terminalPanel.js
+    debugPanel.js
+13. Minimal Backend Pseudocode
+// command-registry.mjs
+const commands = new Map();
+
+export function createCommandState(command, args) {
+  const id = makeId();
+  const state = {
+    id,
+    command,
+    args,
+    status: 'queued',
+    phase: 'init',
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    exitCode: null,
+    stdout: [],
+    stderr: [],
+    logs: [],
+    result: null,
+    error: null,
+    reportPath: null
+  };
+  commands.set(id, state);
+  return state;
+}
+
+export function getCommandState(id) {
+  return commands.get(id);
+}
+// build-kit-bridge.mjs
+import { spawn } from 'node:child_process';
+
+export function runBuildKitCommand(state, onEvent) {
+  state.status = 'running';
+  state.phase = 'process-spawned';
+  onEvent('status', { status: state.status, phase: state.phase });
+
+  const child = spawn('node', ['ext-build.mjs', state.command, ...state.args], {
+    cwd: BUILD_KIT_PATH
+  });
+
+  child.stdout.on('data', (chunk) => {
+    const text = chunk.toString();
+    for (const line of text.split(/\r?\n/)) {
+      if (!line) continue;
+      state.stdout.push(line);
+      onEvent('stdout', { line });
+    }
+  });
+
+  child.stderr.on('data', (chunk) => {
+    const text = chunk.toString();
+    for (const line of text.split(/\r?\n/)) {
+      if (!line) continue;
+      state.stderr.push(line);
+      onEvent('stderr', { line });
+    }
+  });
+
+  child.on('close', (code) => {
+    state.exitCode = code;
+    state.endedAt = new Date().toISOString();
+    state.phase = 'parsing-json';
+    onEvent('status', { status: state.status, phase: state.phase });
+
+    // parse final JSON here
+    // set success/error
+    // emit result + done
+  });
+}
+14. Build Kit Compatibility Recommendation
+
+To keep the IDE simple, the Build Kit should standardize final JSON like:
+
+{
+  "success": true,
+  "command": "doctor",
+  "reportPath": ".build-report/doctor.json",
+  "summary": {
+    "checksPassed": 8,
+    "checksFailed": 0
+  },
+  "details": {}
+}
+
+That aligns with the current structured-report direction already defined for the Build Kit.
+
+15. Implementation Order
+Step 1
+
+Create command-registry.mjs
+
+in-memory store
+create/get/update helpers
+Step 2
+
+Refactor bridge to async spawn
+
+no frontend change yet
+verify one command runs end-to-end
+Step 3
+
+Add /api/command/start
+
+returns command ID immediately
+Step 4
+
+Add SSE /api/command/stream
+
+stream stdout/stderr/status
+Step 5
+
+Add /api/command/result
+
+final normalized result
+Step 6
+
+Connect Terminal panel
+
+live log rendering
+Step 7
+
+Connect Debug panel
+
+metadata + parsed JSON + errors
+Step 8
+
+Add recent command history
+
+session UX foundation
+16. Key Guardrails
+
+Maintain these rules exactly:
+
+IDE does not reimplement Build Kit logic
+IDE only launches commands and renders returned structure
+Build Kit command names and result schema remain stable
+Debug/terminal state belongs to IDE only
+
+This is already your defined contract and should remain locked.
+
+17. Best Immediate Deliverable
+
+The most effective next concrete task is:
+
+Implement async bridge + in-memory command registry first
+
+That unlocks:
+
+terminal streaming
+debug panel
+command history
+future OpenClaw compatibility
+
+Without that, the IDE remains a static wrapper.
+
+Files referenced: Agents.md, PROJECT_STATUS.md, Rules.md
+
+If you want, I’ll draft the actual starter code for:
+command-registry.mjs, build-kit-bridge.mjs, and the three API endpoints.
+
+UI + mapping
+UI + Mapping Blueprint (IDE → Command System)
+
+This defines how your IDE panels, state, and APIs connect to the async command system. It stays aligned with the rule: IDE = UX, Build Kit = execution.
+
+1. UI Architecture (Panel-Level)
+Layout (VSCode-style shell)
+┌───────────────────────────────────────────────┐
+│ Top Bar (Project | Status | Active Command)   │
+├───────────────┬───────────────────────────────┤
+│ Explorer      │ Editor                        │
+│               │                               │
+├───────────────┼───────────────┬───────────────┤
+│ Terminal      │ Debug Panel   │ Status Panel  │
+└───────────────┴───────────────┴───────────────┘
+2. UI → Data Mapping
+Core Principle
+
+Every UI panel reads from Command State Store, not directly from API.
+
+A. Command State Store (Single Source of Truth)
+{
+  commands: {
+    byId: {
+      cmd_1: {
+        id,
+        command,
+        status,
+        phase,
+        stdout: [],
+        stderr: [],
+        result,
+        error
+      }
+    },
+    allIds: []
+  },
+
+  ui: {
+    activeCommandId: null,
+    selectedCommandId: null
+  }
+}
+3. Panel Mapping
+3.1 Terminal Panel
+Purpose
+Real-time execution visibility
+Developer feedback loop
+Data Mapping
+UI Element	Source
+Output lines	commands.byId[id].stdout
+Errors	commands.byId[id].stderr
+Status badge	commands.byId[id].status
+Render Logic
+const cmd = store.commands.byId[activeCommandId];
+
+renderLines([
+  ...cmd.stdout.map(l => ({ type: 'info', text: l })),
+  ...cmd.stderr.map(l => ({ type: 'error', text: l }))
+]);
+UX Enhancements
+Prefix lines with timestamps
+Color coding:
+info → gray
+success → green
+error → red
+3.2 Debug Panel
+Purpose
+
+Structured inspection (not logs)
+
+Data Mapping
+Section	Source
+Command Info	command, args
+Status	status, phase
+Result JSON	result
+Error Object	error
+Report Path	reportPath
+Layout
+[Command: doctor]
+
+Status: running
+Phase: parsing-json
+
+Result:
+{ ...formatted JSON... }
+
+Error:
+{ ...if exists... }
+Render Logic
+renderJSON(cmd.result || {});
+renderError(cmd.error || null);
+3.3 Status Bar
+Purpose
+
+Global system awareness
+
+Data Mapping
+UI Element	Source
+Active status	latest running command
+Indicator	derived from status
+Logic
+const running = commands.find(c => c.status === 'running');
+
+if (running) {
+  show("Running: " + running.command);
+} else {
+  show("Idle");
+}
+3.4 Explorer Panel
+Phase 1 Mapping
+
+(Not yet connected to commands)
+
+Future:
+
+Map selected file → command context
+
+Example:
+
+selectedFile → ext-build.config.json
+→ run verify command
+3.5 Editor Panel
+Role
+Config editing (ext-build.config.json)
+Script preview
+Future:
+inline command execution buttons
+4. UI Event → API Mapping
+A. Run Command (Button / Terminal Input)
+UI Action
+runCommand("doctor", []);
+API Call
+POST /api/command/start
+Store Update
+store.ui.activeCommandId = response.id;
+B. Stream Connection
+Trigger
+
+Immediately after command start
+
+connectToStream(id);
+SSE Handler
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  switch(event.type) {
+    case 'stdout':
+      appendStdout(id, data.line);
+      break;
+
+    case 'stderr':
+      appendStderr(id, data.line);
+      break;
+
+    case 'status':
+      updateStatus(id, data);
+      break;
+
+    case 'result':
+      setResult(id, data);
+      break;
+
+    case 'done':
+      finalizeCommand(id);
+      break;
+  }
+};
+5. State Mutations (Critical)
+Required Functions
+function appendStdout(id, line) {
+  store.commands.byId[id].stdout.push(line);
+}
+
+function appendStderr(id, line) {
+  store.commands.byId[id].stderr.push(line);
+}
+
+function updateStatus(id, payload) {
+  Object.assign(store.commands.byId[id], payload);
+}
+
+function setResult(id, result) {
+  store.commands.byId[id].result = result;
+}
+
+function finalizeCommand(id) {
+  store.commands.byId[id].status = 'success';
+}
+6. Command History (UI Mapping)
+Data
+store.commands.allIds
+UI
+
+Terminal sidebar or dropdown:
+
+> doctor ✔
+> verify ✖
+> release ✔
+Click Behavior
+onSelectCommand(id) {
+  store.ui.selectedCommandId = id;
+}
+
+→ Debug panel updates
+
+7. Debug Browser Panel (Advanced)
+Purpose
+
+Deep inspection
+
+Add Sections
+Raw stdout stream
+Parsed JSON
+Execution timeline
+Timeline UI
+[10:00:01] init
+[10:00:02] process started
+[10:00:03] running
+[10:00:05] parsing
+[10:00:06] completed
+Mapping
+
+Use:
+
+cmd.logs = [
+  { time, event, data }
+]
+8. UI State Flow
+User clicks Run
+→ API start
+→ state created
+→ SSE connected
+→ logs streamed
+→ state updated
+→ panels react automatically
+
+No panel talks directly to API except the trigger.
+
+9. Styling Guidance (Based on Your UI Direction)
+Theme
+Dark glass UI
+Black / charcoal base
+Accent: red (Letterblack identity)
+Components
+Element	Style
+Panels	soft blur + border
+Terminal	monospace + subtle glow
+JSON	syntax-highlighted
+Status	pill indicators
+10. Minimal Component Structure
+src/js/
+  components/
+    Terminal/
+    Debug/
+    Explorer/
+    StatusBar/
+
+  state/
+    commandStore.js
+
+  services/
+    api.js
+    sse.js
+11. Critical Design Rule
+
+All UI must depend on:
+
+STATE → RENDER
+
+Never:
+
+API → DIRECT UI
+12. Result
+
+After this mapping:
+
+Terminal becomes live (not static)
+Debug becomes meaningful (not empty panel)
+IDE becomes execution-aware system
+Ready for:
+OpenClaw
+Multi-command workflows
+Automation pipelines
+13. Recommended Immediate Implementation Order
+Command store (frontend)
+SSE client
+Terminal panel live binding
+Debug panel JSON binding
+Status bar integration
+Command history UI
+
+If required, next step can be:
+
+Full UI component code (HTML/CSS/JS) for Terminal + Debug
+Or React/Vanilla implementation scaffold matching your current shell
+UI component code (HTML/CSS/JS) for Terminal + Debug + self made letterblack shell no thirdparty
+UI Components — Terminal + Debug + LetterBlack Shell (Vanilla, No Third-Party)
+
+This is a plug-and-play baseline UI layer aligned with your IDE architecture:
+
+Pure HTML/CSS/JS (no frameworks)
+State-driven rendering
+Ready to connect to /api/command/* + SSE
+Designed for your dark + red LetterBlack identity
+1. File Structure (Drop-in)
+src/
+  index.html
+  css/
+    base.css
+    layout.css
+    components.css
+  js/
+    state/
+      commandStore.js
+    services/
+      api.js
+      sse.js
+    components/
+      terminal.js
+      debug.js
+      statusbar.js
+    app.js
+2. HTML — Shell Layout
+index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LetterBlack IDE</title>
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="brand">LETTERBLACK</div>
+    <div id="statusBar" class="status">Idle</div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main">
+
+    <!-- Explorer -->
+    <div class="panel explorer">
+      <div class="panel-title">Explorer</div>
+    </div>
+
+    <!-- Editor -->
+    <div class="panel editor">
+      <div class="panel-title">Editor</div>
+    </div>
+
+    <!-- Terminal -->
+    <div class="panel terminal">
+      <div class="panel-title">Terminal</div>
+      <div id="terminalOutput" class="terminal-output"></div>
+      <div class="terminal-input">
+        <input id="commandInput" placeholder="Run command (e.g. doctor)" />
+        <button id="runBtn">Run</button>
+      </div>
+    </div>
+
+    <!-- Debug -->
+    <div class="panel debug">
+      <div class="panel-title">Debug</div>
+      <div id="debugContent" class="debug-content"></div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
+3. CSS — LetterBlack Theme
+base.css
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", sans-serif;
+}
+
+body {
+  background: #0b0b0c;
+  color: #e5e5e5;
+}
+layout.css
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  background: #111;
+  border-bottom: 1px solid #222;
+}
+
+.brand {
+  color: #ff2a2a;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  grid-template-rows: 1fr 300px;
+  gap: 8px;
+  padding: 8px;
+}
+
+.panel {
+  background: rgba(20,20,22,0.8);
+  border: 1px solid #222;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer { grid-row: span 2; }
+.editor { }
+.terminal { }
+.debug { }
+components.css
+.panel-title {
+  padding: 8px;
+  font-size: 12px;
+  color: #aaa;
+  border-bottom: 1px solid #222;
+}
+
+/* Terminal */
+.terminal-output {
+  flex: 1;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-y: auto;
+}
+
+.line {
+  margin-bottom: 2px;
+}
+
+.line.info { color: #bbb; }
+.line.error { color: #ff4d4d; }
+.line.success { color: #4dff88; }
+
+.terminal-input {
+  display: flex;
+  border-top: 1px solid #222;
+}
+
+.terminal-input input {
+  flex: 1;
+  padding: 6px;
+  background: #111;
+  border: none;
+  color: #fff;
+}
+
+.terminal-input button {
+  background: #ff2a2a;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* Debug */
+.debug-content {
+  padding: 8px;
+  overflow: auto;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+4. State Store
+commandStore.js
+export const store = {
+  commands: {
+    byId: {},
+    allIds: []
+  },
+  ui: {
+    activeCommandId: null
+  }
+};
+
+export function createCommand(id, command) {
+  store.commands.byId[id] = {
+    id,
+    command,
+    status: "running",
+    stdout: [],
+    stderr: [],
+    result: null,
+    error: null
+  };
+  store.commands.allIds.push(id);
+  store.ui.activeCommandId = id;
+}
+
+export function appendStdout(id, line) {
+  store.commands.byId[id].stdout.push(line);
+}
+
+export function appendStderr(id, line) {
+  store.commands.byId[id].stderr.push(line);
+}
+
+export function setResult(id, result) {
+  store.commands.byId[id].result = result;
+  store.commands.byId[id].status = "success";
+}
+
+export function setError(id, error) {
+  store.commands.byId[id].error = error;
+  store.commands.byId[id].status = "error";
+}
+5. API Service
+api.js
+export async function startCommand(command) {
+  const res = await fetch("/api/command/start", {
+    method: "POST",
+    body: JSON.stringify({ command, args: [] })
+  });
+
+  return res.json();
+}
+6. SSE Service
+sse.js
+export function connectStream(id, handlers) {
+  const es = new EventSource(`/api/command/stream?id=${id}`);
+
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handlers.message(data);
+  };
+
+  return es;
+}
+7. Terminal Component
+terminal.js
+import { store } from "../state/commandStore.js";
+
+export function renderTerminal() {
+  const container = document.getElementById("terminalOutput");
+  container.innerHTML = "";
+
+  const id = store.ui.activeCommandId;
+  if (!id) return;
+
+  const cmd = store.commands.byId[id];
+
+  cmd.stdout.forEach(line => {
+    addLine(container, line, "info");
+  });
+
+  cmd.stderr.forEach(line => {
+    addLine(container, line, "error");
+  });
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function addLine(container, text, type) {
+  const div = document.createElement("div");
+  div.className = "line " + type;
+  div.textContent = text;
+  container.appendChild(div);
+}
+8. Debug Component
+debug.js
+import { store } from "../state/commandStore.js";
+
+export function renderDebug() {
+  const el = document.getElementById("debugContent");
+
+  const id = store.ui.activeCommandId;
+  if (!id) return;
+
+  const cmd = store.commands.byId[id];
+
+  el.textContent = JSON.stringify({
+    command: cmd.command,
+    status: cmd.status,
+    result: cmd.result,
+    error: cmd.error
+  }, null, 2);
+}
+9. Status Bar
+statusbar.js
+import { store } from "../state/commandStore.js";
+
+export function renderStatus() {
+  const el = document.getElementById("statusBar");
+
+  const id = store.ui.activeCommandId;
+  if (!id) {
+    el.textContent = "Idle";
+    return;
+  }
+
+  const cmd = store.commands.byId[id];
+  el.textContent = cmd.status.toUpperCase();
+}
+10. App Controller
+app.js
+import { createCommand, appendStdout, appendStderr, setResult } from "./state/commandStore.js";
+import { startCommand } from "./services/api.js";
+import { connectStream } from "./services/sse.js";
+
+import { renderTerminal } from "./components/terminal.js";
+import { renderDebug } from "./components/debug.js";
+import { renderStatus } from "./components/statusbar.js";
+
+function renderAll() {
+  renderTerminal();
+  renderDebug();
+  renderStatus();
+}
+
+document.getElementById("runBtn").onclick = async () => {
+  const input = document.getElementById("commandInput").value;
+
+  const res = await startCommand(input);
+  const id = res.id;
+
+  createCommand(id, input);
+  renderAll();
+
+  connectStream(id, {
+    message: (data) => {
+      if (data.type === "stdout") appendStdout(id, data.line);
+      if (data.type === "stderr") appendStderr(id, data.line);
+      if (data.type === "result") setResult(id, data.result);
+
+      renderAll();
+    }
+  });
+};
+11. Result
+
+You now have:
+
+Terminal
+Live streaming logs
+Error separation
+Scroll behavior
+Debug Panel
+Structured JSON output
+Command state visibility
+Shell
+LetterBlack themed UI
+Clean panel system
+No third-party dependency
+12. Next Logical Upgrade
+
+When ready, extend:
+
+Command history sidebar
+Multi-command tabs
+Timeline visualization (phase-based)
+Explorer → command binding
+
+If needed next:
+
+I can upgrade this into full VSCode-like interactions (tabs, file system, command palette)
+Or wire this directly into your Build Kit bridge + real SSE backend
+Build Kit bridge + real SSE backend so it will be real vs code like feature not an html browser?
+
+
+Yes. The key distinction is this:
+
+What makes it feel like a real IDE instead of “just an HTML page”
+
+An IDE like VS Code is still fundamentally a web UI stack:
+
+HTML
+CSS
+JavaScript
+
+The difference is where it runs and what it can access.
+
+Browser-style shell
+Runs in a normal browser tab
+Limited OS access
+Feels like a web app
+Real desktop IDE shell
+Same UI technologies, but wrapped in a desktop host
+Local process access
+File system access
+Native menus / windows / shortcuts
+Terminal / debug / command bridge
+
+So the answer is:
+
+If you add a real Build Kit bridge + SSE backend, it becomes a real IDE shell architecture.
+
+But to make it fully VS Code–like, it should ultimately run inside a desktop wrapper such as:
+
+Electron
+Tauri
+or your own native shell
+
+Not just 127.0.0.1:4173 in a browser.
+
+Correct architecture
+Desktop Shell (Electron/Tauri)
+  → Local UI (HTML/CSS/JS)
+    → Local Node backend
+      → Build Kit bridge
+        → ext-build.mjs
+          → core + adapters
+
+That is the correct “real IDE” model.
+
+What SSE backend gives you
+
+SSE does not make it native by itself.
+What it gives you is real-time IDE behavior:
+
+live terminal output
+live debug logs
+command progress
+command lifecycle updates
+non-blocking execution
+
+Without SSE/streaming, your UI is just:
+
+click
+→ wait
+→ receive result
+
+With SSE, it becomes:
+
+click
+→ command starts
+→ live logs stream
+→ status updates stream
+→ result streams in
+→ UI reacts continuously
+
+That is the correct foundation for a VS Code–style experience.
+
+Recommended final direction
+Stage 1 — Current
+
+Local web shell:
+
+index.html
+dev-server.mjs
+build-kit-bridge.mjs
+
+Good for development.
+
+Stage 2 — Real IDE shell
+
+Wrap it as a desktop app:
+
+Electron main process
+BrowserWindow
+preload bridge
+local backend / IPC
+Build Kit execution
+Stage 3 — Full IDE behavior
+
+Add:
+
+file explorer
+editor tabs
+command palette
+terminal sessions
+debug session browser
+workspace/session persistence
+Best implementation model for your project
+
+Since your Build Kit already uses Node and CLI, the strongest path is:
+
+Option A — Electron
+
+Best if you want:
+
+Node access
+process spawning
+file access
+easy desktop packaging
+VS Code–style structure
+Option B — Tauri
+
+Best if you want:
+
+lighter app
+better performance footprint
+stronger security model
+
+For your current architecture, Electron is the simpler fit.
+
+Real bridge + SSE backend design
+Folder shape
+LB_CEP_Developer (IDE)/
+  electron/
+    main.mjs
+    preload.mjs
+  scripts/
+    dev-server.mjs
+    build-kit-bridge.mjs
+    command-registry.mjs
+    sse-manager.mjs
+  src/
+    index.html
+    css/
+    js/
+Backend responsibilities
+1. command-registry.mjs
+
+Stores all running/completed command sessions.
+
+2. build-kit-bridge.mjs
+
+Spawns Build Kit commands asynchronously.
+
+3. sse-manager.mjs
+
+Tracks active SSE clients and pushes events.
+
+4. dev-server.mjs
+
+Exposes:
+
+POST /api/command/start
+GET /api/command/stream?id=...
+GET /api/command/result?id=...
+Real backend code
+scripts/command-registry.mjs
+const commandMap = new Map();
+
+function makeId() {
+  return `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function createCommand(command, args = []) {
+  const id = makeId();
+
+  const state = {
+    id,
+    command,
+    args,
+    status: "queued",
+    phase: "init",
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    exitCode: null,
+    stdout: [],
+    stderr: [],
+    logs: [],
+    result: null,
+    error: null,
+    reportPath: null
+  };
+
+  commandMap.set(id, state);
+  return state;
+}
+
+export function getCommand(id) {
+  return commandMap.get(id) || null;
+}
+
+export function updateCommand(id, patch) {
+  const cmd = commandMap.get(id);
+  if (!cmd) return null;
+  Object.assign(cmd, patch);
+  return cmd;
+}
+
+export function pushStdout(id, line) {
+  const cmd = commandMap.get(id);
+  if (!cmd) return;
+  cmd.stdout.push(line);
+  cmd.logs.push({
+    type: "stdout",
+    time: new Date().toISOString(),
+    line
+  });
+}
+
+export function pushStderr(id, line) {
+  const cmd = commandMap.get(id);
+  if (!cmd) return;
+  cmd.stderr.push(line);
+  cmd.logs.push({
+    type: "stderr",
+    time: new Date().toISOString(),
+    line
+  });
+}
+
+export function listCommands() {
+  return Array.from(commandMap.values()).sort((a, b) =>
+    a.startedAt < b.startedAt ? 1 : -1
+  );
+}
+scripts/sse-manager.mjs
+const clientsByCommand = new Map();
+
+export function addSseClient(commandId, res) {
+  if (!clientsByCommand.has(commandId)) {
+    clientsByCommand.set(commandId, new Set());
+  }
+  clientsByCommand.get(commandId).add(res);
+}
+
+export function removeSseClient(commandId, res) {
+  const set = clientsByCommand.get(commandId);
+  if (!set) return;
+  set.delete(res);
+  if (set.size === 0) {
+    clientsByCommand.delete(commandId);
+  }
+}
+
+export function emitSse(commandId, eventName, payload) {
+  const set = clientsByCommand.get(commandId);
+  if (!set) return;
+
+  const data = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+
+  for (const res of set) {
+    res.write(data);
+  }
+}
+scripts/build-kit-bridge.mjs
+import { spawn } from "node:child_process";
+import path from "node:path";
+import {
+  updateCommand,
+  pushStdout,
+  pushStderr
+} from "./command-registry.mjs";
+import { emitSse } from "./sse-manager.mjs";
+
+const BUILD_KIT_ROOT = path.resolve(
+  process.cwd(),
+  "../LBE Build Kit"
+);
+
+const ENTRY_FILE = path.join(BUILD_KIT_ROOT, "ext-build.mjs");
+
+function safeLines(chunk) {
+  return chunk
+    .toString()
+    .split(/\r?\n/)
+    .map(line => line.trimEnd())
+    .filter(Boolean);
+}
+
+function extractTaggedJson(lines) {
+  const tagged = lines.find(line => line.startsWith("__EXT_BUILD_JSON__"));
+  if (!tagged) return null;
+
+  const raw = tagged.replace("__EXT_BUILD_JSON__", "");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function runBuildKitCommand(state) {
+  updateCommand(state.id, {
+    status: "starting",
+    phase: "process-spawned"
+  });
+
+  emitSse(state.id, "status", {
+    id: state.id,
+    status: "starting",
+    phase: "process-spawned"
+  });
+
+  const child = spawn("node", [ENTRY_FILE, state.command, ...state.args], {
+    cwd: BUILD_KIT_ROOT,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  const allStdout = [];
+  const allStderr = [];
+
+  updateCommand(state.id, { status: "running", phase: "streaming-output" });
+
+  emitSse(state.id, "status", {
+    id: state.id,
+    status: "running",
+    phase: "streaming-output"
+  });
+
+  child.stdout.on("data", chunk => {
+    const lines = safeLines(chunk);
+    for (const line of lines) {
+      allStdout.push(line);
+      pushStdout(state.id, line);
+      emitSse(state.id, "stdout", { id: state.id, line });
+    }
+  });
+
+  child.stderr.on("data", chunk => {
+    const lines = safeLines(chunk);
+    for (const line of lines) {
+      allStderr.push(line);
+      pushStderr(state.id, line);
+      emitSse(state.id, "stderr", { id: state.id, line });
+    }
+  });
+
+  child.on("error", err => {
+    const error = {
+      code: "PROCESS_SPAWN_FAILED",
+      message: "Failed to start Build Kit process",
+      details: err.message,
+      stage: "bridge"
+    };
+
+    updateCommand(state.id, {
+      status: "error",
+      phase: "completed",
+      endedAt: new Date().toISOString(),
+      error
+    });
+
+    emitSse(state.id, "error", { id: state.id, error });
+    emitSse(state.id, "done", { id: state.id, status: "error" });
+  });
+
+  child.on("close", code => {
+    updateCommand(state.id, {
+      exitCode: code,
+      phase: "parsing-json"
+    });
+
+    emitSse(state.id, "status", {
+      id: state.id,
+      status: "running",
+      phase: "parsing-json"
+    });
+
+    const parsed = extractTaggedJson([...allStdout].reverse());
+
+    if (code === 0 && parsed) {
+      updateCommand(state.id, {
+        status: "success",
+        phase: "completed",
+        endedAt: new Date().toISOString(),
+        result: parsed,
+        reportPath: parsed.reportPath || null
+      });
+
+      emitSse(state.id, "result", {
+        id: state.id,
+        result: parsed
+      });
+
+      emitSse(state.id, "done", {
+        id: state.id,
+        status: "success"
+      });
+      return;
+    }
+
+    const error = {
+      code: "PROCESS_EXIT_NONZERO",
+      message: "Build Kit command failed",
+      details: `Exit code ${code}`,
+      stage: "cli",
+      raw: {
+        stdoutTail: allStdout.slice(-10),
+        stderrTail: allStderr.slice(-10)
+      }
+    };
+
+    updateCommand(state.id, {
+      status: "error",
+      phase: "completed",
+      endedAt: new Date().toISOString(),
+      error
+    });
+
+    emitSse(state.id, "error", {
+      id: state.id,
+      error
+    });
+
+    emitSse(state.id, "done", {
+      id: state.id,
+      status: "error"
+    });
+  });
+}
+scripts/dev-server.mjs
+
+This example uses Node’s built-in http only, no third-party packages.
+
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  createCommand,
+  getCommand
+} from "./command-registry.mjs";
+import { runBuildKitCommand } from "./build-kit-bridge.mjs";
+import {
+  addSseClient,
+  removeSseClient
+} from "./sse-manager.mjs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, "../src");
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8"
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function serveFile(res, filePath) {
+  if (!fs.existsSync(filePath)) {
+    res.writeHead(404);
+    res.end("Not found");
+    return;
+  }
+
+  const ext = path.extname(filePath);
+  const contentType =
+    ext === ".html" ? "text/html; charset=utf-8" :
+    ext === ".css" ? "text/css; charset=utf-8" :
+    ext === ".js" ? "application/javascript; charset=utf-8" :
+    "text/plain; charset=utf-8";
+
+  res.writeHead(200, { "Content-Type": contentType });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", chunk => {
+      data += chunk.toString();
+    });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1:4173");
+
+  if (req.method === "POST" && url.pathname === "/api/command/start") {
+    try {
+      const raw = await readBody(req);
+      const body = JSON.parse(raw || "{}");
+
+      const command = String(body.command || "").trim();
+      const args = Array.isArray(body.args) ? body.args : [];
+
+      if (!command) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "Missing command"
+        });
+        return;
+      }
+
+      const state = createCommand(command, args);
+      runBuildKitCommand(state);
+
+      sendJson(res, 200, {
+        ok: true,
+        id: state.id,
+        status: state.status
+      });
+      return;
+    } catch (err) {
+      sendJson(res, 500, {
+        ok: false,
+        error: err.message
+      });
+      return;
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/command/result") {
+    const id = url.searchParams.get("id");
+    const cmd = id ? getCommand(id) : null;
+
+    if (!cmd) {
+      sendJson(res, 404, {
+        ok: false,
+        error: "Command not found"
+      });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      command: cmd
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/command/stream") {
+    const id = url.searchParams.get("id");
+    const cmd = id ? getCommand(id) : null;
+
+    if (!cmd) {
+      res.writeHead(404);
+      res.end("Command not found");
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*"
+    });
+
+    res.write(`event: status\ndata: ${JSON.stringify({
+      id: cmd.id,
+      status: cmd.status,
+      phase: cmd.phase
+    })}\n\n`);
+
+    addSseClient(id, res);
+
+    req.on("close", () => {
+      removeSseClient(id, res);
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/status") {
+    sendJson(res, 200, {
+      ok: true,
+      app: "LB_CEP_Developer",
+      mode: "local"
+    });
+    return;
+  }
+
+  let filePath = path.join(ROOT, url.pathname === "/" ? "index.html" : url.pathname);
+  serveFile(res, filePath);
+});
+
+server.listen(4173, "127.0.0.1", () => {
+  console.log("IDE dev server running at http://127.0.0.1:4173");
+});
+Build Kit output requirement
+
+For this bridge to be robust, your Build Kit should emit one final tagged JSON line like this:
+
+console.log("__EXT_BUILD_JSON__" + JSON.stringify(result));
+
+That is the cleanest way to mix logs + final machine-readable payload.
+
+Without that, the bridge has to guess where JSON starts, which is fragile.
+
+Frontend SSE fix
+
+Your earlier SSE sample used onmessage, but since the backend emits named events, the frontend should use addEventListener.
+
+src/js/services/sse.js
+export function connectStream(id, handlers) {
+  const es = new EventSource(`/api/command/stream?id=${encodeURIComponent(id)}`);
+
+  es.addEventListener("status", e => {
+    handlers.status?.(JSON.parse(e.data));
+  });
+
+  es.addEventListener("stdout", e => {
+    handlers.stdout?.(JSON.parse(e.data));
+  });
+
+  es.addEventListener("stderr", e => {
+    handlers.stderr?.(JSON.parse(e.data));
+  });
+
+  es.addEventListener("result", e => {
+    handlers.result?.(JSON.parse(e.data));
+  });
+
+  es.addEventListener("error", e => {
+    handlers.error?.(JSON.parse(e.data));
+  });
+
+  es.addEventListener("done", e => {
+    handlers.done?.(JSON.parse(e.data));
+    es.close();
+  });
+
+  return es;
+}
+Does this make it “not an HTML browser”?
+Accurate answer:
+
+It makes it a real local IDE architecture, but if you open it in Chrome, it is still a browser-hosted UI.
+
+To make it fully comparable to VS Code in delivery model, wrap it in Electron.
+
+Minimal Electron layer
+electron/main.mjs
+import { app, BrowserWindow } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let mainWindow = null;
+let serverProcess = null;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    backgroundColor: "#0b0b0c",
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, "preload.mjs")
+    }
+  });
+
+  mainWindow.loadURL("http://127.0.0.1:4173");
+}
+
+app.whenReady().then(() => {
+  serverProcess = spawn("node", ["scripts/dev-server.mjs"], {
+    cwd: path.resolve(__dirname, ".."),
+    stdio: "inherit"
+  });
+
+  createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  if (serverProcess) {
+    serverProcess.kill();
+  }
+});
+electron/preload.mjs
+// Keep minimal for now.
+// Later you can expose desktop APIs here through contextBridge.
+
+That gives you:
+
+desktop window
+local server boot
+native app process
+non-browser delivery
+
+That is the correct next step after the backend is stable.
+
+Final answer
+Yes — Build Kit bridge + real SSE backend is the correct path to make this behave like a real IDE.
+
+But:
+
+SSE + bridge makes it functionally IDE-like
+Electron/Tauri wrapper makes it delivery-model IDE-like
+both together make it genuinely comparable to a VS Code-style desktop tool
+Best sequence
+Build async bridge
+Build SSE backend
+Connect terminal/debug UI
+Wrap in Electron
+Add file explorer/session/debug tools
+
+The strongest next concrete build step is:
+
+Implement the tagged JSON output in Build Kit and wire the async bridge + SSE backend first
+
+Then wrap the shell in Electron.
+
+The Electron window opened but there's no file system access, no project picker, no native menu, and the explorer panel
+Problem Diagnosis
+
+The current Electron wrapper is only a window launcher. It loads your UI but does not expose:
+
+File system access
+Project/workspace selection
+Native menus
+Explorer integration
+
+This is expected because:
+
+contextIsolation: true + sandbox: true → blocks direct Node access in UI
+No preload bridge → UI cannot talk to OS
+No IPC → no communication between UI ↔ Electron main
+Explorer panel has no backend data source
+Target State (What You Actually Need)
+
+You are missing the Desktop Integration Layer:
+
+Electron Main (Node, OS access)
+  ↕ IPC
+Preload (secure bridge)
+  ↕
+Renderer (UI - your IDE)
+Step-by-Step Fix (Production-Correct)
+1. Enable File System Access via Preload Bridge
+Update electron/preload.mjs
+import { contextBridge, ipcRenderer } from "electron";
+
+contextBridge.exposeInMainWorld("LB_API", {
+
+  pickProject: () => ipcRenderer.invoke("dialog:pickProject"),
+
+  readDir: (dirPath) => ipcRenderer.invoke("fs:readDir", dirPath),
+
+  readFile: (filePath) => ipcRenderer.invoke("fs:readFile", filePath),
+
+  writeFile: (filePath, content) =>
+    ipcRenderer.invoke("fs:writeFile", filePath, content),
+
+});
+2. Add IPC Handlers in Main Process
+Update electron/main.mjs
+
+Add:
+
+import { ipcMain, dialog } from "electron";
+import fs from "node:fs";
+import path from "node:path";
+A. Project Picker (Folder Select)
+ipcMain.handle("dialog:pickProject", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"]
+  });
+
+  if (result.canceled) return null;
+  return result.filePaths[0];
+});
+B. Read Directory (Explorer)
+ipcMain.handle("fs:readDir", async (event, dirPath) => {
+  try {
+    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+
+    return items.map(item => ({
+      name: item.name,
+      path: path.join(dirPath, item.name),
+      type: item.isDirectory() ? "folder" : "file"
+    }));
+
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+C. Read File
+ipcMain.handle("fs:readFile", async (event, filePath) => {
+  try {
+    return fs.readFileSync(filePath, "utf-8");
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+D. Write File
+ipcMain.handle("fs:writeFile", async (event, filePath, content) => {
+  try {
+    fs.writeFileSync(filePath, content, "utf-8");
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+3. Add Native Menu (VS Code–like)
+In main.mjs
+import { Menu } from "electron";
+
+function createMenu() {
+  const template = [
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Open Project",
+          click: () => {
+            mainWindow.webContents.send("menu:openProject");
+          }
+        },
+        { role: "quit" }
+      ]
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "toggledevtools" }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+Call:
+
+createMenu();
+4. Listen to Menu Event in UI
+Add in app.js
+window.electron = window.electron || {};
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (window.require) return;
+
+  const { ipcRenderer } = window;
+});
+
+Instead (clean approach):
+
+Update preload:
+onMenuOpenProject: (callback) =>
+  ipcRenderer.on("menu:openProject", callback)
+Use in UI:
+window.LB_API.onMenuOpenProject(async () => {
+  const path = await window.LB_API.pickProject();
+  if (path) {
+    loadProject(path);
+  }
+});
+5. Build Explorer Panel (Real FS)
+explorer.js
+let currentRoot = null;
+
+export async function loadProject(path) {
+  currentRoot = path;
+  renderExplorer(path);
+}
+
+async function renderExplorer(dirPath) {
+  const container = document.querySelector(".explorer");
+  container.innerHTML = "";
+
+  const items = await window.LB_API.readDir(dirPath);
+
+  items.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "explorer-item " + item.type;
+    div.textContent = item.name;
+
+    div.onclick = () => {
+      if (item.type === "folder") {
+        renderExplorer(item.path);
+      } else {
+        openFile(item.path);
+      }
+    };
+
+    container.appendChild(div);
+  });
+}
+
+async function openFile(path) {
+  const content = await window.LB_API.readFile(path);
+
+  document.querySelector(".editor").textContent = content;
+}
+6. Add “Open Project” Button in UI
+
+In index.html (Explorer panel):
+
+<button id="openProjectBtn">Open Project</button>
+Bind it
+import { loadProject } from "./components/explorer.js";
+
+document.getElementById("openProjectBtn").onclick = async () => {
+  const path = await window.LB_API.pickProject();
+  if (path) loadProject(path);
+};
+7. Explorer Styling
+.explorer-item {
+  padding: 6px;
+  cursor: pointer;
+}
+
+.explorer-item:hover {
+  background: #222;
+}
+
+.explorer-item.folder {
+  color: #ffcc66;
+}
+
+.explorer-item.file {
+  color: #aaa;
+}
+8. Result After This
+
+You now have:
+
+✔ File system access
+Open any local folder
+Read/write files
+✔ Explorer panel
+Navigate folders
+Open files
+✔ Native menu
+File → Open Project
+Reload / DevTools
+✔ Secure architecture
+No direct Node in UI
+All access via preload bridge
+9. Why This Matters
+
+You just added the missing layer:
+
+UI (Renderer)
+  ↕ preload bridge
+Electron Main (OS access)
+  ↕
+File System / Processes
+
+Now your app is:
+
+Not a web UI
+Not just a wrapper
+But a true desktop IDE shell
+
+10. Next Critical Upgrade
+
+After this, the next step should be:
+
+Connect Explorer → Build Kit
+
+Example:
+
+Detect ext-build.config.json
+Add button: Run Verify
+Trigger Build Kit directly from Explorer
+11. Strategic Position
+
+You now have:
+
+Feature	Status
+UI shell	✔
+SSE terminal	✔
+Debug panel	✔
+File system	✔
+Explorer	✔
+Native menu	✔
+
+You are now officially in:
+
+IDE territory, not UI prototype
+
+If you want next:
+
+I can build tabbed editor + file caching (VS Code behavior)
+Or command palette (Ctrl+Shift+P style)
+Or integrate Build Kit commands directly into Explorer context menu
+tabbed editor + file caching (VS Code behavior
+command palette (Ctrl+Shift+P style
+integrate Build Kit commands directly into Explorer context menu
+code hightlighter like how it does highlight in vscode and sugeesion
+api settings and a chat menue to chat and provide instructions to api provider, agent collaboration option
+highliter lines of codes , also file highlighter settings , and images to send to chat 
+
+so on just provide the list of the imlimentaiton needed only the list of what else featus do not code or dont make large explaination
+Full Feature Implementation Checklist (IDE Expansion Roadmap)
+1. Editor System
+Tabbed editor (multi-file tabs)
+Tab state persistence (open/closed/active)
+Dirty state tracking (unsaved changes indicator)
+File caching layer (in-memory + optional disk cache)
+File reopen session restore
+Split editor (horizontal/vertical)
+Read-only vs editable modes
+2. Code Intelligence Layer
+Syntax highlighting engine (custom or embedded tokenizer)
+Language detection (by extension)
+Token parsing pipeline
+Line highlighting (active line, errors, selections)
+Bracket matching + scope highlighting
+Code folding
+Minimap (optional)
+Cursor position tracking
+3. Suggestions / Autocomplete
+Basic autocomplete engine (keywords + file context)
+Snippet system (custom user snippets)
+Inline suggestions (ghost text)
+Suggestion popup UI
+Context-aware suggestions (file type based)
+Command suggestions (Build Kit commands)
+AI-assisted suggestions (future)
+4. Command Palette (Ctrl + Shift + P)
+Command registry system
+Search/filter engine
+Fuzzy search matching
+Keyboard navigation (↑ ↓ Enter)
+Command execution dispatcher
+Categorized commands (File, Build Kit, UI, Settings)
+Recent commands history
+5. Explorer Enhancements
+Tree view (nested folders)
+Expand/collapse state persistence
+File icons (type-based)
+Right-click context menu system
+Multi-select support
+Drag & drop (reorder / move files)
+File rename / delete / create
+Search within explorer
+6. Explorer Context Menu (Critical)
+Open file
+Reveal in folder
+Rename / delete
+Duplicate file
+Run Build Kit commands:
+verify
+doctor
+build
+release
+Detect ext-build.config.json → show special actions
+Context-aware actions (file vs folder)
+7. Build Kit Integration Layer
+Command registry mapping (UI ↔ CLI)
+Command templates (pre-filled args)
+One-click execution from Explorer
+Output linking to Debug panel
+Report viewer (.build-report)
+Command presets
+8. Terminal System Upgrade
+Multiple terminal sessions (tabs)
+Command history navigation
+Input parsing (CLI-like)
+Persistent logs per session
+Clear / restart terminal
+Attach terminal to command ID
+9. Debug System Expansion
+Command timeline visualization
+Step-level execution logs
+Raw JSON inspector
+Error trace viewer
+Adapter-level breakdown
+Report diff viewer
+10. State & Session Management
+Global session store
+Workspace state persistence
+Open files + cursor position restore
+Command history persistence
+UI layout persistence
+11. API Settings Panel
+Provider selection:
+OpenAI
+Gemini
+Local LLM
+API key management
+Endpoint configuration
+Model selection dropdown
+Temperature / params control
+Test connection button
+Save profiles
+12. Chat Panel (AI Interaction Layer)
+Chat UI (threaded messages)
+Multi-provider support
+Context injection (selected file / code)
+Image upload + preview
+Drag & drop files/images
+Send code blocks directly
+Response streaming
+Copy / apply response to editor
+13. Agent Collaboration Layer
+Agent selector (OpenClaw, Gemini, etc.)
+Task delegation UI
+Multi-agent workflow chaining
+Agent response routing
+Execution approval system
+Shared memory/context between agents
+14. File Highlighting System
+Active file highlight in explorer
+Modified files highlight
+Recently opened files highlight
+Error file highlighting
+Search result highlighting
+15. Code Highlighting Features
+Active line highlight
+Selection highlight
+Error/warning underline
+Search highlight
+Multi-cursor support
+Inline annotations (future)
+16. Image + Asset Support
+Image preview panel
+Drag image to chat
+Drag image into editor (reference)
+Image metadata display
+AI image send pipeline
+Asset thumbnails in explorer
+17. Search System
+Global search (Ctrl + Shift + F)
+File search
+Replace system
+Regex support
+Highlight matches
+18. Keybinding System
+Shortcut manager
+Custom keybinding config
+Default IDE shortcuts:
+Ctrl+P (file search)
+Ctrl+Shift+P (command palette)
+Ctrl+S (save)
+Ctrl+/ (comment)
+19. UI Framework Enhancements
+Dockable panels
+Resizable panels
+Panel visibility toggles
+Floating panels (future)
+Theme system (dark/light/custom)
+20. Performance Layer
+Virtualized rendering (large files)
+Debounced updates
+Lazy loading explorer
+Efficient diff updates
+21. Security Layer
+Sandboxed API calls
+Safe file operations
+Permission prompts
+API key encryption (local storage)
+22. Extension System (Future)
+Plugin loader
+Custom command registration
+UI extension slots
+External tool integration
+23. Build / Release UI
+Release dashboard
+Packaging status
+Installer generation UI
+GitHub release integration
+Version manager
+24. Notifications System
+Toast notifications
+Error alerts
+Command completion alerts
+Background task notifications
+25. Logging System
+System logs panel
+Filter logs by type
+Export logs
+Strategic Summary
+
+This list represents the transition from:
+
+UI Shell → Developer Tool → Full IDE Platform
+
+If needed next step:
+
+Prioritize this list into Phase-wise execution (Phase 2 → Phase 5 roadmap)
+Or break into modular build order aligned with your current system
+Context
+The LB_CEP_Developer IDE is an Electron + Node.js web-shell app. The shell UI exists but has critical gaps:
+
+AI chat is mocked (setTimeout stub) — never calls any real API
+Settings (provider/key/model/endpoint) are saved but never used in chat
+#history-list element referenced in app.js (line 809) does not exist in index.html
+No settings button in topbar (modal exists, no trigger)
+No project info panel
+No guide/instruction panel
+Debug panel lacks the execution timeline specified in UI + mapping.md
+AI cannot write files (no bridge from chat to window.ide.writeFile)
+
+Goal: implement all these features while preserving every working feature (terminal streaming, file editor, search, resizers, explorer, command palette, quick open, syntax highlighting, autocomplete).
+
+Critical Files
+FileRoleapp/ui/index.htmlAll structural HTML (panels, tabs, elements)app/ui/app.jsMain orchestrator — chat, settings, history, resizers, bootapp/ui/styles.cssAll CSS additions appended at endapp/ui/aiClient.jsNEW — streaming async generator for OpenAI/Gemini/Localapp/ui/chatStore.jsAdd updateLastMessage() for streaming placeholderapp/ui/debug.jsAdd event log timeline reading cmd.logsapp/ui/settingsStore.jsAlready complete — no changes neededelectron/preload.mjsAlready exposes window.ide.writeFile — no changes
+
+Implementation Steps (in priority order)
+STEP 1 — Fix #history-list (Pure HTML, zero risk)
+File: app/ui/index.html
+Add "History" as a third tab inside #explorer-tabs:
+html<div class="terminal-tab" data-target="history-content">History</div>
+Add new content div after #search-content (before closing </div> of #panel-explorer):
+html<div id="history-content" class="explorer-content">
+  <ul id="history-list" class="history-list">
+    <li class="history-empty">No commands yet</li>
+  </ul>
+</div>
+
+The explorerTabs click handler in app.js already handles .terminal-tab[data-target] generically — zero JS changes needed. loadHistory() in app.js already references #history-list and will activate automatically.
+
+
+STEP 2 — Add Settings Button to Topbar
+File: app/ui/index.html
+Wrap existing #status-bar in .topbar-right and add gear button before it:
+html<div class="topbar-right">
+  <button id="settings-btn" class="topbar-btn topbar-icon-btn" title="API Settings">⚙</button>
+  <div id="status-bar" class="topbar-status">● ready</div>
+</div>
+File: app/ui/app.js — Add one line after existing settings listeners (around line 316):
+jsdocument.getElementById("settings-btn")?.addEventListener("click", showSettings);
+File: app/ui/styles.css — Append:
+css.topbar-right { display: flex; align-items: center; gap: 10px; }
+.topbar-icon-btn { padding: 3px 8px; font-size: 14px; line-height: 1; }
+
+STEP 3 — Project Info Panel
+File: app/ui/index.html — In #right-bottom-tabs, add tab:
+html<div class="terminal-tab" data-target="panel-project-content">Proj</div>
+Add content div after #panel-status-content:
+html<div id="panel-project-content" class="right-bottom-content project-info-panel">
+  <div class="proj-section">
+    <div class="proj-label">Project</div>
+    <div class="proj-value" id="proj-name">— no project —</div>
+  </div>
+  <div class="proj-section">
+    <div class="proj-label">Root Path</div>
+    <div class="proj-value muted" id="proj-path">—</div>
+  </div>
+  <div class="proj-section">
+    <div class="proj-label">Files</div>
+    <div class="proj-value" id="proj-file-count">—</div>
+  </div>
+  <div class="proj-section">
+    <div class="proj-label">Open Tabs</div>
+    <div class="proj-value" id="proj-tab-count">—</div>
+  </div>
+  <div class="proj-section">
+    <div class="proj-label">Root Structure</div>
+    <div id="proj-tree-summary" class="proj-tree-summary muted">Open a project to see structure</div>
+  </div>
+</div>
+File: app/ui/app.js — Add renderProjectPanel() function and call it from handleProjectOpen():
+jsfunction renderProjectPanel() {
+  if (!currentProject) return;
+  const name = currentProject.split(/[\\/]/).pop();
+  const nameEl = document.getElementById("proj-name");
+  const pathEl = document.getElementById("proj-path");
+  const fileCountEl = document.getElementById("proj-file-count");
+  const tabCountEl = document.getElementById("proj-tab-count");
+  const treeSummaryEl = document.getElementById("proj-tree-summary");
+
+  if (nameEl) nameEl.textContent = name;
+  if (pathEl) pathEl.textContent = currentProject;
+  if (tabCountEl) tabCountEl.textContent = ${editorStore.tabs.length} open;
+
+  if (isElectron) {
+    window.ide.readDir(currentProject).then(entries => {
+      const files = entries.filter(e => !e.isDir);
+      const dirs = entries.filter(e => e.isDir);
+      if (fileCountEl) fileCountEl.textContent = ${files.length} files, ${dirs.length} folders;
+      if (treeSummaryEl) {
+        treeSummaryEl.innerHTML = entries.slice(0, 20).map(e =>
+          <div class="proj-entry ${e.isDir ? 'proj-dir' : 'proj-file'}">${e.isDir ? '▶' : '—'} ${e.name}</div>
+        ).join('');
+      }
+    });
+  }
+}
+Call in handleProjectOpen() after openProject(dirPath).
+CSS to append to styles.css:
+css.project-info-panel { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.proj-section { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.proj-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.proj-value { font-size: 12px; color: var(--text); word-break: break-all; }
+.proj-tree-summary { font-size: 11px; line-height: 1.8; }
+.proj-entry { padding: 1px 0; }
+.proj-dir { color: #ccc; }
+.proj-file { color: var(--muted); padding-left: 8px; }
+
+STEP 4 — Guide/Instruction Panel
+File: app/ui/index.html — Add 4th tab to #right-bottom-tabs:
+html<div class="terminal-tab" data-target="panel-about-content">Guide</div>
+Add #panel-about-content div with static keyboard shortcuts and Build Kit command reference (full content in implementation — static HTML listing all 10 ext-build commands, Ctrl+P/Ctrl+S/Ctrl+\ shortcuts, AI chat file-write convention).
+CSS to append:
+css.about-panel { padding: 12px; overflow-y: auto; flex-direction: column; }
+.about-title { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+.about-sub { font-size: 10px; color: var(--muted); margin-bottom: 12px; }
+.about-section { border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px; }
+.about-heading { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.about-entry { font-size: 11px; color: var(--text); padding: 2px 0; display: flex; align-items: center; gap: 6px; }
+.about-entry kbd { background: rgba(255,255,255,.06); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font: 10px monospace; color: var(--accent); }
+.about-entry code { font: 10px monospace; color: #98c379; }
+
+STEP 5 — Real AI Chat via aiClient.js (Core Feature)
+5a. Create app/ui/aiClient.js (new file)
+Exports async function* streamChat(messages, config) which dispatches to:
+
+streamOpenAI(messages, { apiKey, model, endpoint }) — fetches OpenAI-compatible /v1/chat/completions with stream: true, reads SSE data: lines, yields choices[0].delta.content
+streamGemini(messages, { apiKey, model }) — calls generativelanguage.googleapis.com/.../streamGenerateContent?alt=sse, converts role names (assistant→model), yields candidates[0].content.parts[0].text
+streamLocal(messages, { endpoint, model }) — calls Ollama-style endpoint (/api/chat), yields message.content or response per NDJSON line
+
+Key detail: Gemini uses a separate systemInstruction field (not a message in contents). The system role message is extracted and placed there. Last 10 turns are sent to keep context window manageable.
+5b. Rewrite sendChatMessage() in app/ui/app.js
+
+Import streamChat at top of file: import { streamChat } from "./aiClient.js";
+Check settingsStore.config.apiKey — if missing and not local, show error message in chat instead of calling API
+Build messages array: system prompt (includes active file content up to 8000 chars) + last 10 turns from chatStore + new user message
+System prompt format: You are an expert CEP extension developer embedded in LetterBlack IDE... When asked to write code output a fenced block with // FILE: path/to/file.ext as first line inside the block.
+Add empty AI message to chatStore as placeholder
+Loop for await (const chunk of streamChat(messages, cfg)): accumulate fullResponse, update placeholder by index, call renderChat() each chunk
+After loop: call chatStore.save(), then call detectAndOfferFileWrite(fullResponse, activePane)
+Set chatSendBtn.disabled = true / "..." while streaming, restore in finally
+Catch block: update placeholder with [Error: ...], call showNotification
+
+5c. AI File Write Detection
+Add detectAndOfferFileWrite(response, activePane) to app.js:
+
+Regex: /
+[\w]*\n\/\/ FILE: ([^\n]+)\n([\s\S]*?)
+/g
+For each match: call offerFileWrite(filePath, content)
+
+Add offerFileWrite(filePath, content) to app.js:
+
+Creates a <button class="chat-write-btn">Write: filename.ext</button> appended to the last .chat-msg.ai element
+On click: calls window.ide.writeFile(filePath, content), shows notification, opens file in editor via editorStore.addTab()
+Guards: requires isElectron, disables button after click
+
+5d. Update renderChat() in app.js
+Replace string interpolation of m.content with processing that:
+
+For ai messages: replaces 
+lang\n...\n
+ with <pre class="chat-code lang"><code>...</code></pre> (HTML-escaped)
+For ai messages: replaces text with <code class="chat-inline-code">text</code>
+For user messages: keep plain text (no HTML injection risk since it's own input)
+
+5e. Sync agent-selector ↔ settingsStore
+In app.js:
+
+After settingsStore.load() in boot: if (agentSelector) agentSelector.value = settingsStore.config.provider || 'gemini';
+agentSelector?.addEventListener("change", () => { settingsStore.save({ provider: agentSelector.value }); });
+After settingsSaveBtn listener saves: if (agentSelector) agentSelector.value = settingsProvider.value;
+
+Update agent-selector options in index.html to match provider values:
+html<option value="openai">OpenAI (GPT)</option>
+<option value="gemini">Gemini</option>
+<option value="local">Local LLM</option>
+New CSS to append:
+css.chat-write-btn { display: block; margin-top: 8px; background: rgba(255,42,42,.1); border: 1px solid rgba(255,42,42,.3); color: var(--accent); font-size: 10px; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: background 120ms; }
+.chat-write-btn:hover { background: rgba(255,42,42,.2); }
+.chat-write-btn.written { color: var(--success); border-color: var(--success); background: rgba(61,220,132,.1); }
+.chat-write-btn.error { color: var(--error); }
+.chat-write-btn:disabled { opacity: .5; pointer-events: none; }
+.chat-code { background: rgba(0,0,0,.4); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font: 11px/1.5 monospace; overflow-x: auto; margin-top: 6px; white-space: pre; color: #b8c5e0; }
+.chat-inline-code { background: rgba(255,255,255,.08); padding: 1px 4px; border-radius: 3px; font: 11px monospace; color: #98c379; }
+
+STEP 6 — chatStore updateLastMessage helper
+File: app/ui/chatStore.js — Add method:
+jsupdateLastMessage(content) {
+  if (this.messages.length === 0) return;
+  this.messages[this.messages.length - 1].content = content;
+}
+
+STEP 7 — Debug Panel Log Timeline
+File: app/ui/debug.js
+After the existing phase timeline block, add event log timeline section reading cmd.logs (array of { type, line, time } already populated by commandStore.js):
+jsif (cmd.logs && cmd.logs.length > 0) {
+  html += '<div class="debug-section"><div class="debug-label">Event Log</div>';
+  html += '<div class="log-timeline">';
+  const startTime = cmd.logs[0]?.time || Date.now();
+  cmd.logs.slice(-30).forEach(log => {
+    const relSec = ((log.time - startTime) / 1000).toFixed(2);
+    const shortLine = (log.line || '').length > 80 ? log.line.slice(0, 80) + '…' : (log.line || '');
+    html += <div class="log-event log-event-${log.type}">
+      <span class="log-event-time">+${relSec}s</span>
+      <span class="log-event-type">${log.type}</span>
+      <span class="log-event-text">${shortLine.replace(/</g,'&lt;')}</span>
+    </div>;
+  });
+  html += '</div></div>';
+}
+CSS to append:
+css.log-timeline { margin-top: 8px; display: grid; gap: 2px; max-height: 150px; overflow-y: auto; }
+.log-event { display: grid; grid-template-columns: 46px 44px 1fr; gap: 6px; padding: 2px 4px; border-radius: 3px; font: 10px/1.5 monospace; align-items: center; }
+.log-event-stdout { background: rgba(255,255,255,.02); }
+.log-event-stderr { background: rgba(255,77,77,.05); }
+.log-event-sys    { background: rgba(255,179,71,.04); }
+.log-event-time { color: #555; text-align: right; }
+.log-event-type { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.log-event-stderr .log-event-type { color: var(--error); }
+.log-event-sys .log-event-type { color: var(--warn); }
+.log-event-text { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+Execution Order Table
+#FileChangeRisk1index.htmlAdd History tab + #history-list✅ Zero2index.htmlAdd #settings-btn + .topbar-right✅ Zero3app.jsWire settings-btn → showSettings (1 line)✅ Near-zero4styles.css.topbar-right, .topbar-icon-btn✅ Zero5index.htmlAdd Project tab + #panel-project-content✅ Zero6styles.cssProject panel CSS✅ Zero7app.jsAdd renderProjectPanel() + call from handleProjectOpen🟡 Low8index.htmlAdd Guide tab + #panel-about-content (static HTML)✅ Zero9styles.cssGuide panel CSS✅ Zero10debug.jsAdd event log timeline🟡 Low11styles.cssLog timeline CSS✅ Zero12aiClient.jsCreate new file with all 3 streaming providers🟡 Medium (new file)13chatStore.jsAdd updateLastMessage()✅ Near-zero14app.jsAdd streamChat import✅ Near-zero15app.jsReplace sendChatMessage() with real streaming🟠 Medium — test after16app.jsAdd detectAndOfferFileWrite + offerFileWrite🟡 Low17app.jsUpdate renderChat() for code block rendering🟡 Low18styles.cssChat code + write button CSS✅ Zero19app.jsSync agent-selector ↔ settingsStore🟡 Low20index.htmlUpdate agent-selector options✅ Zero
+
+Verification
+
+Structural checks (no server needed):
+
+Open index.html in browser — History/Proj/Guide tabs appear and switch
+Settings gear ⚙ in topbar opens the settings modal
+
+
+Electron app (npm run electron):
+
+Open a project → Project panel shows name, path, file count, root structure
+History panel populates after running any command
+ext-build doctor → debug panel shows event log timeline with +Xs timestamps
+
+
+AI chat:
+
+Open Settings → enter OpenAI API key, save
+Open AI Chat tab → agent selector shows "OpenAI (GPT)"
+Type a message → response streams in word-by-word
+Ask AI to "write me a hello.js file" → AI includes // FILE: hello.js block → "Write: hello.js" button appears
+Click Write button → file opens in editor tab
+
+
+Regression:
+
+Terminal commands still stream via SSE
+File editor, syntax highlight, Ctrl+S save still work
+Resizers still work
+Search still works
+Command palette (Ctrl+Shift+P) still work
+Implementation Validation — Status: Approved with Minor Execution Notes
+
+The plan is structurally sound and aligned with your architecture. No conflicts with existing systems. Below is a concise validation + critical flags only.
+
+✅ What is Correct (No Changes Required)
+Core Architecture
+SSE terminal + Build Kit bridge untouched ✔
+Renderer → preload → main separation preserved ✔
+Settings store reused (no duplication) ✔
+Chat system upgraded without breaking UI ✔
+Explorer / editor / palette unaffected ✔
+⚠️ Critical Implementation Notes (Do Not Skip)
+1. AI Streaming Stability
+Ensure SSE parsing is line-safe
+Guard against:
+partial JSON chunks
+empty data: lines
+Always wrap parsing in try/catch inside generators
+2. Gemini Role Mapping (Important)
+Gemini does not support roles like OpenAI
+Must convert:
+assistant → model
+user → user
+system → systemInstruction (separate field)
+
+Failure → silent API errors
+
+3. Chat Streaming UI Performance
+renderChat() per chunk is correct but:
+Add throttle (~16ms or requestAnimationFrame)
+Prevent UI lag on long responses
+4. File Write Safety (High Impact)
+
+Before calling:
+
+window.ide.writeFile(filePath, content)
+
+Add:
+
+Normalize path
+Prevent:
+../ traversal
+absolute overwrite outside project
+5. Code Block Rendering (Security)
+Always HTML-escape:
+< > & "
+Never inject raw AI output into DOM
+6. Debug Timeline Time Source
+
+You used:
+
+(log.time - startTime)
+
+Ensure:
+
+log.time is numeric (Date.now) not ISO string
+OR convert:
+new Date(log.time).getTime()
+7. History Panel Edge Case
+
+If no commands:
+
+Ensure UI does not stay stuck after first render
+Replace placeholder on first insert
+8. Project Panel Performance
+entries.slice(0, 20)
+
+Correct.
+
+But:
+
+Avoid full readDir recursion
+Keep it shallow (current behavior is correct)
+9. AI Context Size Control
+
+You included:
+
+active file content up to 8000 chars
+
+Add:
+
+Hard trim safeguard:
+content.slice(0, 8000)
+Prevents token overflow
+10. Agent Selector Sync
+
+Ensure no loop:
+
+Changing dropdown → save settings
+Saving settings → update dropdown
+
+Guard with:
+
+if (agentSelector.value !== settingsProvider.value)
+🧠 System-Level Assessment
+After this implementation, your system becomes:
+Execution Engine (Build Kit) ✔
+IDE Shell (Electron UI) ✔
+Real-time Terminal + Debug ✔
+Persistent Workspace ✔
+AI Copilot (Streaming + File Write) ✔
+
+This is no longer a tool.
+
+This is:
+
+A programmable development environment with embedded AI execution capability
+
+🚀 What You Have Achieved (Post-Implementation)
+Capability	Status
+Real-time command execution	✔
+Debug timeline	✔
+File system IDE	✔
+AI streaming chat	✔
+AI → file write bridge	✔
+Project awareness	✔
+Command history	✔
+Native desktop shell	✔
+🔒 Final Critical Rule (Do Not Break)
+
+Maintain strict boundary:
+
+AI → Suggests
+IDE → Decides
+Bridge → Executes
+
+Never allow:
+
+AI → Direct execution without user action
+
+Your current “Write button” model is correct and must remain enforced.
+
+📌 Optional Next Phase (When Ready)
+
+Only after this is stable:
+
+Command Palette → AI commands integration
+Multi-agent orchestration (OpenClaw layer)
+Inline code editing (AI modifies open file directly with diff view)
+Workspace memory (AI remembers project context)
+Final Verdict
+
+✔ Implementation plan is correct, complete, and production-aligned
+✔ No structural conflicts
+⚠ Only minor safeguards required (listed above)
+
+If needed next step:
+
+Provide final cleaned production-ready sendChatMessage()
+Or AI command palette integration (Ctrl+Shift+P → AI actions)
+yes
+
+Use this as the production-ready sendChatMessage() baseline for app/ui/app.js.
+
+import { streamChat } from "./aiClient.js";
+
+/**
+ * Expected existing globals / modules:
+ * - chatStore
+ * - settingsStore
+ * - renderChat()
+ * - showNotification(message, type?)
+ * - detectAndOfferFileWrite(response, activePane)
+ * - getActiveEditorPane() OR equivalent active tab lookup
+ * - isElectron
+ */
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getActiveFileContext() {
+  try {
+    const activePane = typeof getActiveEditorPane === "function" ? getActiveEditorPane() : null;
+    if (!activePane || !activePane.path || typeof activePane.content !== "string") {
+      return null;
+    }
+
+    return {
+      path: activePane.path,
+      content: activePane.content.slice(0, 8000)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildSystemPrompt(fileContext) {
+  const parts = [
+    "You are an expert CEP extension developer embedded inside LetterBlack IDE.",
+    "You help with Adobe CEP extensions, Electron tooling, Build Kit integration, UI architecture, and safe file generation.",
+    "Be precise and implementation-focused.",
+    "When asked to write or update files, output fenced code blocks.",
+    "Inside each fenced code block, the first line must be exactly: // FILE: path/to/file.ext",
+    "Do not omit the file path line.",
+    "Prefer complete, directly usable code."
+  ];
+
+  if (fileContext) {
+    parts.push("");
+    parts.push(`Active file: ${fileContext.path}`);
+    parts.push("Active file content follows:");
+    parts.push(fileContext.content);
+  }
+
+  return parts.join("\n");
+}
+
+function buildChatMessages(userText) {
+  const fileContext = getActiveFileContext();
+  const systemPrompt = buildSystemPrompt(fileContext);
+
+  const recentTurns = (chatStore.messages || []).slice(-10).map(msg => ({
+    role: msg.role === "ai" ? "assistant" : "user",
+    content: String(msg.content || "")
+  }));
+
+  return [
+    { role: "system", content: systemPrompt },
+    ...recentTurns,
+    { role: "user", content: userText }
+  ];
+}
+
+function getProviderConfig() {
+  const cfg = settingsStore.config || {};
+
+  return {
+    provider: cfg.provider || "gemini",
+    apiKey: (cfg.apiKey || "").trim(),
+    model: (cfg.model || "").trim(),
+    endpoint: (cfg.endpoint || "").trim()
+  };
+}
+
+function setChatBusy(isBusy) {
+  const chatSendBtn = document.getElementById("chat-send-btn");
+  const chatInput = document.getElementById("chat-input");
+
+  if (chatSendBtn) {
+    chatSendBtn.disabled = isBusy;
+    chatSendBtn.textContent = isBusy ? "..." : "Send";
+  }
+
+  if (chatInput) {
+    chatInput.disabled = isBusy;
+  }
+}
+
+export async function sendChatMessage() {
+  const chatInput = document.getElementById("chat-input");
+  if (!chatInput) return;
+
+  const rawText = String(chatInput.value || "");
+  const userText = rawText.trim();
+  if (!userText) return;
+
+  const cfg = getProviderConfig();
+
+  if (cfg.provider !== "local" && !cfg.apiKey) {
+    chatStore.addMessage("ai", "API key missing. Open Settings and add your API key.");
+    chatStore.save();
+    renderChat();
+    showNotification("Missing API key", "error");
+    return;
+  }
+
+  chatStore.addMessage("user", userText);
+  chatStore.addMessage("ai", "");
+  chatStore.save();
+
+  chatInput.value = "";
+  renderChat();
+  setChatBusy(true);
+
+  let fullResponse = "";
+
+  try {
+    const messages = buildChatMessages(userText);
+
+    for await (const chunk of streamChat(messages, cfg)) {
+      if (!chunk) continue;
+
+      fullResponse += chunk;
+      if (typeof chatStore.updateLastMessage === "function") {
+        chatStore.updateLastMessage(fullResponse);
+      } else if (chatStore.messages.length > 0) {
+        chatStore.messages[chatStore.messages.length - 1].content = fullResponse;
+      }
+
+      renderChat();
+    }
+
+    if (!fullResponse.trim()) {
+      fullResponse = "[No response returned]";
+      if (typeof chatStore.updateLastMessage === "function") {
+        chatStore.updateLastMessage(fullResponse);
+      } else if (chatStore.messages.length > 0) {
+        chatStore.messages[chatStore.messages.length - 1].content = fullResponse;
+      }
+      renderChat();
+    }
+
+    chatStore.save();
+
+    const activePane = typeof getActiveEditorPane === "function" ? getActiveEditorPane() : null;
+    detectAndOfferFileWrite(fullResponse, activePane);
+  } catch (error) {
+    const message = `[Error: ${error?.message || "Unknown chat failure"}]`;
+
+    if (typeof chatStore.updateLastMessage === "function") {
+      chatStore.updateLastMessage(message);
+    } else if (chatStore.messages.length > 0) {
+      chatStore.messages[chatStore.messages.length - 1].content = message;
+    }
+
+    chatStore.save();
+    renderChat();
+    showNotification(error?.message || "Chat request failed", "error");
+  } finally {
+    setChatBusy(false);
+    chatInput.focus();
+  }
+}
+
+Use this helper alongside it for file-write detection:
+
+export function detectAndOfferFileWrite(response, activePane) {
+  if (!response || !isElectron || !window.ide?.writeFile) return;
+
+  const blockRegex = /```[\w-]*\n\/\/ FILE: ([^\n]+)\n([\s\S]*?)```/g;
+  let match;
+
+  while ((match = blockRegex.exec(response)) !== null) {
+    const filePath = String(match[1] || "").trim();
+    const content = String(match[2] || "");
+
+    if (!filePath) continue;
+    offerFileWrite(filePath, content, activePane);
+  }
+}
+
+And this button injector:
+
+export function offerFileWrite(filePath, content, activePane) {
+  const aiMessages = document.querySelectorAll(".chat-msg.ai");
+  const target = aiMessages[aiMessages.length - 1];
+  if (!target) return;
+
+  const btn = document.createElement("button");
+  btn.className = "chat-write-btn";
+  btn.textContent = `Write: ${filePath.split(/[\\/]/).pop()}`;
+
+  btn.addEventListener("click", async () => {
+    try {
+      btn.disabled = true;
+
+      await window.ide.writeFile(filePath, content);
+
+      btn.classList.add("written");
+      btn.textContent = `Written: ${filePath.split(/[\\/]/).pop()}`;
+
+      showNotification(`Wrote ${filePath}`, "success");
+
+      if (window.ide?.readFile && typeof openFileInEditor === "function") {
+        const freshContent = await window.ide.readFile(filePath);
+        openFileInEditor(filePath, freshContent);
+      }
+    } catch (error) {
+      btn.disabled = false;
+      btn.classList.add("error");
+      btn.textContent = `Write failed: ${filePath.split(/[\\/]/).pop()}`;
+      showNotification(error?.message || `Failed to write ${filePath}`, "error");
+    }
+  });
+
+  target.appendChild(btn);
+}
+
+And add this to chatStore.js:
+
+updateLastMessage(content) {
+  if (this.messages.length === 0) return;
+  this.messages[this.messages.length - 1].content = content;
+}
+
+The next strongest step is wiring renderChat() to safely render fenced code blocks and inline code.
+
+UI plan.md
+File
+the above you provide script already given for implimentaiton
+
+Understood. The script I gave is already part of your implementation plan — so the correct next step is not rewriting it, but identifying what is still missing to make it production-complete.
+
+What you need now (only delta / missing pieces)
+1. aiClient.js (MOST IMPORTANT — not optional)
+
+You planned it but this is what usually breaks systems:
+
+Proper SSE parsing (OpenAI)
+Proper Gemini streaming conversion
+NDJSON parsing (local)
+Unified async generator interface
+
+👉 If this is not solid, everything else fails.
+
+2. renderChat() final version (you only defined behavior, not final safe renderer)
+
+Missing:
+
+HTML escaping layer (critical security)
+Code block parser (fenced blocks)
+Inline code parser
+Streaming-safe DOM update (no flicker)
+3. Throttled streaming render (performance gap)
+
+Right now:
+
+renderChat() // called every chunk
+
+Needs:
+
+requestAnimationFrame throttle OR batching
+otherwise UI will lag on long responses
+4. File write safety layer (NOT implemented yet)
+
+You planned:
+
+“normalize filePath”
+
+But you did not implement:
+
+project root validation
+path traversal protection
+
+This is a critical security hole
+
+5. Explorer → Editor bridge after AI write
+
+You mention:
+
+open file in editor
+
+But missing:
+
+guaranteed function:
+openFileInEditor(path, content)
+tab reuse logic (avoid duplicate tabs)
+6. Chat → Active File Context binding (partial)
+
+You wrote:
+
+include active file content
+
+But missing:
+
+reliable source:
+active tab
+unsaved content
+fallback handling when no file open
+7. Debug timeline time bug (very common)
+
+You used:
+
+(log.time - startTime)
+
+Missing:
+
+normalization:
+const t = typeof log.time === "number"
+  ? log.time
+  : new Date(log.time).getTime();
+8. History panel first-render fix
+
+You added HTML but missing:
+
+remove placeholder on first insert
+9. Agent selector loop guard
+
+You planned sync but missing:
+
+infinite loop prevention
+10. Settings → Chat runtime binding (hidden issue)
+
+You save settings, but:
+
+chat may still use stale config if cached
+
+Needs:
+
+always read fresh config before each request
+11. Error normalization layer (missing)
+
+Right now errors are raw:
+
+[Error: ...]
+
+Better:
+
+structured error object
+consistent UI rendering
+12. Streaming cancel support (not implemented)
+
+Missing:
+
+ability to stop generation
+AbortController
+13. Chat scroll behavior (UX gap)
+
+Missing:
+
+auto-scroll during streaming
+but not when user scrolls up manually
+14. Multi-message streaming safety
+
+Edge case:
+
+user sends second message before first completes
+
+Missing:
+
+lock or queue system
+15. AI response post-processing layer
+
+You detect file blocks, but missing:
+
+multiple file blocks handling UX
+grouping writes
+Summary (What actually remains)
+
+You already designed the system correctly.
+
+What remains is:
+
+STABILITY LAYER
++ aiClient correctness
++ renderChat safety
++ streaming performance
++ file write security
+
+INTEGRATION LAYER
++ editor bridge
++ active file context
++ settings sync
+
+UX LAYER
++ scroll behavior
++ history fix
++ cancel control
+If you want the next step
+
+Choose one:
+
+Option A (recommended)
+
+→ I give you aiClient.js production-ready (all 3 providers, fully stable)
+
+Option B
+
+→ I give you final renderChat() (safe + code highlighting + streaming optimized)
+
+Option C
+
+→ I give you file write security layer (project sandbox + safe paths)
+
+Option D
+
+→ I integrate everything into a final “chat subsystem module” (clean, plug-in ready)
+
+Say the option.
+
+UI plan.md
+File
+
+Correct — your implementation plan already covers everything structurally .
+What you need now is execution clarity: what is left that is NOT explicitly coded yet.
+
+Below is the final missing layer checklist (only gaps, no repetition of your plan):
+
+🔴 CRITICAL MISSING (will break if not done)
+1. aiClient.js — real implementation (not just planned)
+
+You listed behavior, but not actual:
+
+SSE parser (OpenAI: data: lines, [DONE])
+Gemini SSE parsing (candidates)
+Local NDJSON parsing
+
+👉 This is the #1 blocker.
+
+2. Safe renderChat() (not implemented fully)
+
+You described behavior but missing:
+
+HTML escape function
+Regex parser for:
+code blocks
+inline code
+DOM-safe rendering (no raw innerHTML)
+3. Streaming throttle (performance)
+
+Currently:
+
+renderChat() every chunk
+
+Missing:
+
+requestAnimationFrame or batching
+4. File write sandbox (security)
+
+You said:
+
+normalize path
+
+But missing actual enforcement:
+
+block ../
+block absolute paths outside project
+enforce project root
+5. Active file context source
+
+You assume:
+
+activePane.content
+
+But missing:
+
+guaranteed source of truth from editor store
+unsaved content handling
+6. Editor reopen after write
+
+You planned:
+
+open file in editor
+
+Missing:
+
+tab deduplication
+reload vs new tab logic
+7. Debug timeline time normalization
+
+Your plan uses:
+
+(log.time - startTime)
+
+Missing:
+
+conversion for ISO timestamps
+8. History panel activation fix
+
+Missing:
+
+removal of .history-empty on first insert
+9. Agent selector infinite loop guard
+
+Missing:
+
+condition before setting value
+10. Settings → runtime binding
+
+Risk:
+
+stale config used during chat
+
+Fix:
+
+always read settingsStore.config fresh at send time
+🟡 IMPORTANT BUT NOT BLOCKING
+11. Streaming cancel (AbortController)
+Not implemented
+Needed for real IDE feel
+12. Chat scroll behavior
+Auto-scroll while streaming
+Stop auto-scroll if user scrolls up
+13. Multi-request safety
+Prevent sending multiple chats simultaneously
+14. Multiple file blocks handling
+Current: sequential buttons
+Missing: grouping / UI clarity
+15. Error normalization
+
+Instead of:
+
+[Error: ...]
+
+Use structured:
+
+{ code, message, stage }
+🟢 ALREADY CORRECT (DO NOT TOUCH)
+
+From your plan:
+
+History tab ✔
+Settings button ✔
+Project panel ✔
+Guide panel ✔
+Debug timeline ✔
+Chat streaming logic ✔
+File write UX (button-based) ✔
+SSE terminal ✔
+Build Kit integration ✔
+⚡ FINAL REALITY CHECK
+
+You are not missing features anymore.
+
+You are missing:
+
+EXECUTION COMPLETENESS
+
+Meaning:
+
+Layer	Status
+UI	✅ Done
+Architecture	✅ Done
+Integration plan	✅ Done
+Runtime stability	❌ Needs finishing
+Security layer	❌ Needs enforcement
+Streaming engine	❌ Needs real code
+🚀 NEXT ACTION (choose one)
+
+Do NOT implement randomly.
+
+Pick one of these:
+
+Option 1 (Recommended)
+
+→ I give you aiClient.js (fully production-ready, all providers)
+
+Option 2
+
+→ I give you final renderChat() (safe + highlighted + streaming optimized)
+
+Option 3
+
+→ I give you file write sandbox (secure + project-bound)
+
+Option 4
+
+→ I give you final integration patch (all missing pieces combined cleanly)
+
+Say the option number.
+
+Option 4 — the final integration patch. All missing pieces in one clean shot.
+
+Here's the accurate current status before you patch:
+
+Item	Status
+aiClient.js SSE/Gemini/NDJSON parsers	✅ Written (full file, rolling buffer, try/catch)
+renderChat() HTML escape + code blocks	✅ Written (escape first, then regex render)
+requestAnimationFrame throttle	✅ Written (in sendChatMessage)
+AbortController (■ Stop)	✅ Written
+Send lock (_chatStreaming)	✅ Written
+Auto-scroll (near-bottom guard)	✅ Written
+Debug timeline time normalization	✅ Written (typeof log.time === "number")
+History panel .history-empty removal	✅ Already in prependHistoryItem()
+Agent selector loop guard	✅ Written (3-way sync with !== guards)
+Fresh settingsStore.load() per send	✅ Written
+Active file context from editorStore	✅ Written (unsaved content included)
+Editor reopen via editorStore.addTab()	✅ Written
+File write sandbox (path traversal)	❌ Missing — ../ and out-of-project blocking not enforced
+Error normalization layer	❌ Missing — raw strings only
+Multiple // FILE: block grouping UX	❌ Missing — buttons appended but no grouping label
+The three genuinely open items are file write security, structured error normalization, and multi-file-block UX grouping. Provide Option 4 — the integration patch targeting exactly those gaps.
+
+Use this as the final delta patch for the three remaining gaps only.
+
+Relevant plan context: the missing items are file write security, structured error normalization, and grouped multi-file write UX
+
+1) app/ui/app.js — add helpers
+
+Place these near your other chat/file helpers.
+
+function normalizeError(error, stage = "chat") {
+  if (!error) {
+    return {
+      code: "UNKNOWN",
+      message: "Unknown error",
+      stage
+    };
+  }
+
+  if (typeof error === "string") {
+    return {
+      code: "ERROR",
+      message: error,
+      stage
+    };
+  }
+
+  const code =
+    error.code ||
+    error.name ||
+    "ERROR";
+
+  const message =
+    error.message ||
+    String(error);
+
+  return {
+    code,
+    message,
+    stage,
+    details: error.details || null
+  };
+}
+
+function formatErrorForChat(errorObj) {
+  const safe = normalizeError(errorObj);
+  return `[${safe.stage}:${safe.code}] ${safe.message}`;
+}
+
+function isSubPath(childPath, rootPath) {
+  if (!childPath || !rootPath) return false;
+
+  const normalize = (value) =>
+    String(value)
+      .replace(/\\/g, "/")
+      .replace(/\/+/g, "/")
+      .replace(/\/$/, "")
+      .toLowerCase();
+
+  const child = normalize(childPath);
+  const root = normalize(rootPath);
+
+  return child === root || child.startsWith(root + "/");
+}
+
+function sanitizeRelativeFilePath(filePath) {
+  const raw = String(filePath || "").trim();
+  if (!raw) {
+    throw {
+      code: "EMPTY_PATH",
+      message: "Missing file path",
+      details: raw
+    };
+  }
+
+  const normalized = raw.replace(/\\/g, "/");
+
+  if (/^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("/")) {
+    throw {
+      code: "ABSOLUTE_PATH_BLOCKED",
+      message: "Absolute paths are not allowed",
+      details: raw
+    };
+  }
+
+  if (normalized.includes("\0")) {
+    throw {
+      code: "INVALID_PATH",
+      message: "Path contains invalid characters",
+      details: raw
+    };
+  }
+
+  const parts = normalized.split("/").filter(Boolean);
+  for (const part of parts) {
+    if (part === "." || part === "..") {
+      throw {
+        code: "PATH_TRAVERSAL_BLOCKED",
+        message: "Path traversal is not allowed",
+        details: raw
+      };
+    }
+  }
+
+  return parts.join("/");
+}
+
+function resolveProjectWritePath(filePath) {
+  if (!currentProject) {
+    throw {
+      code: "NO_PROJECT",
+      message: "Open a project before writing files"
+    };
+  }
+
+  const safeRelative = sanitizeRelativeFilePath(filePath);
+  const joined = `${String(currentProject).replace(/[\\\/]+$/, "")}/${safeRelative}`.replace(/\\/g, "/");
+
+  if (!isSubPath(joined, currentProject)) {
+    throw {
+      code: "OUT_OF_PROJECT_BLOCKED",
+      message: "Write path must stay inside the current project",
+      details: joined
+    };
+  }
+
+  return {
+    relativePath: safeRelative,
+    absolutePath: joined
+  };
+}
+2) app/ui/app.js — replace detectAndOfferFileWrite()
+
+This groups all // FILE: blocks from a single AI response into one UI section.
+
+function detectAndOfferFileWrite(response, activePane) {
+  if (!response || !isElectron || !window.ide?.writeFile) return;
+
+  const blockRegex = /```[\w-]*\n\/\/ FILE: ([^\n]+)\n([\s\S]*?)```/g;
+  const files = [];
+  let match;
+
+  while ((match = blockRegex.exec(response)) !== null) {
+    const filePath = String(match[1] || "").trim();
+    const content = String(match[2] || "");
+    if (!filePath) continue;
+
+    files.push({
+      filePath,
+      content
+    });
+  }
+
+  if (files.length === 0) return;
+  offerGroupedFileWrites(files, activePane);
+}
+3) app/ui/app.js — add grouped write UI
+function offerGroupedFileWrites(files, activePane) {
+  const aiMessages = document.querySelectorAll(".chat-msg.ai");
+  const target = aiMessages[aiMessages.length - 1];
+  if (!target) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "chat-write-group";
+
+  const title = document.createElement("div");
+  title.className = "chat-write-group-title";
+  title.textContent =
+    files.length === 1
+      ? "Suggested file"
+      : `Suggested files (${files.length})`;
+
+  const list = document.createElement("div");
+  list.className = "chat-write-list";
+
+  files.forEach(({ filePath, content }) => {
+    const row = document.createElement("div");
+    row.className = "chat-write-row";
+
+    const meta = document.createElement("div");
+    meta.className = "chat-write-meta";
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "chat-write-name";
+    nameEl.textContent = filePath;
+
+    const noteEl = document.createElement("div");
+    noteEl.className = "chat-write-note";
+    noteEl.textContent = `${content.length} chars`;
+
+    meta.appendChild(nameEl);
+    meta.appendChild(noteEl);
+
+    const btn = document.createElement("button");
+    btn.className = "chat-write-btn";
+    btn.textContent = `Write`;
+
+    btn.addEventListener("click", async () => {
+      try {
+        btn.disabled = true;
+
+        const resolved = resolveProjectWritePath(filePath);
+        await window.ide.writeFile(resolved.absolutePath, content);
+
+        btn.classList.remove("error");
+        btn.classList.add("written");
+        btn.textContent = "Written";
+
+        if (typeof editorStore?.addTab === "function") {
+          editorStore.addTab(resolved.absolutePath, content, false);
+        }
+
+        if (typeof renderProjectPanel === "function") {
+          renderProjectPanel();
+        }
+
+        if (typeof showNotification === "function") {
+          showNotification(`Wrote ${resolved.relativePath}`, "success");
+        }
+      } catch (error) {
+        const safe = normalizeError(error, "file-write");
+        btn.disabled = false;
+        btn.classList.remove("written");
+        btn.classList.add("error");
+        btn.textContent = "Write failed";
+
+        if (typeof showNotification === "function") {
+          showNotification(`${safe.code}: ${safe.message}`, "error");
+        }
+      }
+    });
+
+    row.appendChild(meta);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+
+  wrap.appendChild(title);
+  wrap.appendChild(list);
+  target.appendChild(wrap);
+}
+4) app/ui/app.js — normalize chat errors in sendChatMessage()
+
+Replace your raw catch handling with this shape:
+
+} catch (error) {
+  const safe = normalizeError(error, "chat");
+  const message = formatErrorForChat(safe);
+
+  if (typeof chatStore.updateLastMessage === "function") {
+    chatStore.updateLastMessage(message);
+  } else if (chatStore.messages.length > 0) {
+    chatStore.messages[chatStore.messages.length - 1].content = message;
+  }
+
+  chatStore.save();
+  renderChat();
+
+  if (typeof showNotification === "function") {
+    showNotification(`${safe.code}: ${safe.message}`, "error");
+  }
+} finally {
+5) app/ui/aiClient.js — throw normalized errors
+
+Wrap provider failures so app.js gets structured errors.
+
+OpenAI example
+if (!response.ok) {
+  let details = "";
+  try {
+    details = await response.text();
+  } catch {}
+  throw {
+    code: "OPENAI_HTTP_ERROR",
+    message: `OpenAI request failed with ${response.status}`,
+    stage: "openai",
+    details
+  };
+}
+Gemini example
+if (!response.ok) {
+  let details = "";
+  try {
+    details = await response.text();
+  } catch {}
+  throw {
+    code: "GEMINI_HTTP_ERROR",
+    message: `Gemini request failed with ${response.status}`,
+    stage: "gemini",
+    details
+  };
+}
+Local example
+if (!response.ok) {
+  let details = "";
+  try {
+    details = await response.text();
+  } catch {}
+  throw {
+    code: "LOCAL_HTTP_ERROR",
+    message: `Local model request failed with ${response.status}`,
+    stage: "local",
+    details
+  };
+}
+Dispatcher fallback
+throw {
+  code: "UNSUPPORTED_PROVIDER",
+  message: `Unsupported provider: ${config.provider}`,
+  stage: "chat"
+};
+6) app/ui/styles.css — append grouped write styles
+.chat-write-group {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.chat-write-group-title {
+  padding: 7px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.03);
+}
+
+.chat-write-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-write-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+
+.chat-write-row:last-child {
+  border-bottom: none;
+}
+
+.chat-write-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-write-name {
+  font: 11px monospace;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.chat-write-note {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+7) Result
+
+This closes the three remaining gaps:
+
+File write security: blocks ../, blocks absolute paths, blocks out-of-project writes
+Structured error normalization: provider and write errors now have code/message/stage/details
+Multiple file block UX grouping: one grouped section per AI response instead of loose buttons
+8) Final rule preserved
+
+This patch still keeps the enforced boundary:
+
+AI suggests files
+→ user clicks Write
+→ IDE writes
+
+No automatic write path is introduced.

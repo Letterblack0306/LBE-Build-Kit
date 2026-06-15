@@ -1,0 +1,408 @@
+Confidence Layer — Direct Integration Patch (app.js aligned, IIFE-safe)
+
+This wires patch → score → route → transaction/UI without breaking your current flow.
+
+1) Load Order (ensure before app.js)
+<script src="./js/modules/confidence/confidenceEngine.js"></script>
+<script src="./js/modules/patch/patchParser.js"></script>
+<script src="./js/modules/patch/patchApplier.js"></script>
+<script src="./js/modules/patch/patchValidator.js"></script>
+2) Replace AI Write Handling Block
+🔁 Replace your current file-write trigger (around detectAndOfferFileWrite / grouped flow)
+// --- NEW ENTRY: handle AI response for patches/files ---
+function handleAIWriteIntent(aiText) {
+  // 1) Parse patches
+  var patches = PatchParser.parse(aiText);
+
+  // fallback: if no patches, keep existing file-write logic
+  if (!patches || !patches.length) {
+    return detectAndOfferFileWrite(aiText); // your existing path
+  }
+
+  // 2) Validate patches
+  var valid = [];
+  var rejected = [];
+
+  for (var i = 0; i < patches.length; i++) {
+    if (PatchValidator.validate(patches[i])) valid.push(patches[i]);
+    else rejected.push(patches[i]);
+  }
+
+  if (!valid.length) return; // nothing to do
+
+  // 3) Score + route
+  routePatchesByConfidence(valid);
+}
+3) Confidence Routing Layer
+function routePatchesByConfidence(patches) {
+  var results = [];
+
+  for (var i = 0; i < patches.length; i++) {
+    var p = patches[i];
+
+    var score = ConfidenceEngine.scorePatch(p, {
+      fileCount: patches.length,
+      recentErrors: sessionMemory.recentErrors || []
+    });
+
+    results.push({
+      patch: p,
+      score: score,
+      level: ConfidenceEngine.classify(score)
+    });
+  }
+
+  // Split buckets
+  var safe = [];
+  var review = [];
+  var risky = [];
+
+  for (var j = 0; j < results.length; j++) {
+    var r = results[j];
+    if (r.level === "safe") safe.push(r);
+    else if (r.level === "review") review.push(r);
+    else risky.push(r);
+  }
+
+  // --- AUTO EXECUTE SAFE ---
+  if (safe.length) {
+    try {
+      var safeFiles = convertPatchesToFiles(safe);
+      executeTransactionWithLogging(safeFiles, "auto");
+
+      appendTimelineItem({
+        type: "auto-commit",
+        count: safeFiles.length
+      });
+
+    } catch (err) {
+      var norm = normalizeError(err);
+      PersistentMemory.logError(norm);
+    }
+  }
+
+  // --- SEND OTHERS TO UI ---
+  var pending = review.concat(risky);
+  if (pending.length) {
+    var files = convertPatchesToFiles(pending);
+
+    // attach scores for UI
+    for (var k = 0; k < pending.length; k++) {
+      files[k]._confidence = pending[k].score;
+      files[k]._level = pending[k].level;
+    }
+
+    offerGroupedFileWrites(files); // your existing UI
+  }
+}
+4) Patch → File Converter
+function convertPatchesToFiles(results) {
+  var files = [];
+
+  for (var i = 0; i < results.length; i++) {
+    var p = results[i].patch;
+
+    var resolved = resolveProjectWritePath(p.file);
+    var original = fsApi.readFile(resolved);
+
+    var updated = PatchApplier.apply(original, p);
+
+    files.push({
+      path: p.file,
+      content: updated
+    });
+  }
+
+  return files;
+}
+5) Transaction Wrapper (with memory + audit)
+function executeTransactionWithLogging(files, mode) {
+  try {
+    var resolvedFiles = files.map(function(f) {
+      return {
+        path: resolveProjectWritePath(f.path),
+        content: f.content
+      };
+    });
+
+    TransactionManager.run({ files: resolvedFiles });
+
+    PersistentMemory.logTransaction({
+      files: resolvedFiles.map(function(f){ return f.path; }),
+      status: "committed",
+      mode: mode || "manual"
+    });
+
+  } catch (err) {
+    var normalized = normalizeError(err);
+
+    PersistentMemory.logTransaction({
+      files: files.map(function(f){ return f.path; }),
+      status: "failed",
+      error: normalized.message
+    });
+
+    throw err;
+  }
+}
+6) Hook Into Chat Flow
+🔁 In sendChatMessage() response handler:
+
+Replace:
+
+detectAndOfferFileWrite(aiText);
+
+With:
+
+handleAIWriteIntent(aiText);
+7) UI Enhancement (Confidence Labels)
+🔁 Update your grouped UI row render:
+row.innerHTML = `
+  <input type="checkbox" checked data-index="${index}">
+  <span class="file-name">${file.path}</span>
+  ${file._confidence ? `<span class="confidence ${file._level}">
+    ${file._level.toUpperCase()} ${file._confidence}
+  </span>` : ""}
+`;
+CSS
+.confidence {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.confidence.safe { background: #1f7a3a; }
+.confidence.review { background: #a67c00; }
+.confidence.risky { background: #7a1f1f; }
+8) Safety Guarantees (Preserved)
+✅ still uses resolveProjectWritePath()
+✅ still uses TransactionManager (atomic + rollback)
+✅ still logs to PersistentMemory
+✅ validator constraints remain enforced
+✅ fallback to old flow if no patch detected
+Resulting Execution Flow
+AI
+→ PATCH blocks
+→ parse + validate
+→ confidence scoring
+→ SAFE → auto-commit
+→ REVIEW/RISKY → grouped UI
+→ transaction → audit → memory
+Final Outcome
+
+You now have:
+
+Autonomous but governed execution system
+Safe changes happen instantly
+Risky changes remain controlled
+System improves over time
+Next (Optional but High Value)
+1. Auto-Retry Fix Layer
+failed patch → AI reattempt with context
+2. Confidence Learning
+adjust scoring using success/failure logs
+3. OpenClaw Integration
+multi-step execution chains
+
+///////////////////////////////////////////
+
+What it does
+
+When a patch fails:
+
+AI patch → validator/transaction fails → capture error → build retry prompt → AI returns corrected patch → re-score → execute again
+
+So instead of stopping at failure, the engine gets one controlled recovery pass.
+
+Why it is a game changer
+
+It converts the system from:
+
+suggest → fail → wait for user
+
+to:
+
+suggest → fail → self-correct → retry safely
+
+That is the first real step into governed autonomy.
+
+Strict rule set
+
+Keep it tightly controlled:
+
+max 1 auto-retry at first
+retry only for safe failure types
+retry must still pass:
+patch validation
+confidence scoring
+transaction safeguards
+no infinite loops
+no retry on dangerous categories
+Retryable failures
+
+Allow retry for things like:
+
+syntax error
+malformed patch block
+target function not found
+small patch apply mismatch
+validator formatting issue
+
+Do not auto-retry for:
+
+path traversal
+blocked APIs
+policy/security violations
+repeated risky patches
+rollback corruption states
+Core flow
+1. AI returns patch
+2. Patch parsed + scored
+3. Execute transaction
+4. If failed with retryable error:
+   - log failure
+   - build compact retry context
+   - ask AI for corrected patch only
+   - parse + validate + re-score
+   - if safe/review: execute
+5. If retry fails:
+   - send to grouped UI/manual review
+Minimal modules to add
+js/modules/retry/
+  retryClassifier.js
+  retryPromptBuilder.js
+  retryManager.js
+What each module does
+retryClassifier.js
+
+Determines whether the error can be retried.
+
+Example logic:
+
+isRetryable("SYNTAX_ERROR") -> true
+isRetryable("PATH_TRAVERSAL_BLOCKED") -> false
+retryPromptBuilder.js
+
+Builds a small correction prompt, not a full conversation replay.
+
+Example:
+
+Previous patch failed.
+
+Error:
+- SYNTAX_ERROR near function sendChatMessage
+
+Rules:
+- return PATCH blocks only
+- do not rewrite full file
+- keep same target
+- fix syntax only
+retryManager.js
+
+Orchestrates:
+
+failure capture
+retry request
+one-shot re-execution
+fallback to manual review
+Example retry prompt
+[RETRY MODE]
+
+The previous patch failed.
+
+Failure:
+- SYNTAX_ERROR in app.js near function sendChatMessage
+
+Instructions:
+- Return PATCH blocks only
+- Fix only the failing section
+- Do not rewrite the full file
+- Keep changes minimal
+- Do not use import, require, async/await, or module syntax
+Integration point
+
+Inside your transaction failure path:
+
+try execute
+catch error
+  -> classify
+  -> if retryable
+       run retryManager
+     else
+       grouped UI/manual review
+Recommended decision model
+Auto-retry only if all are true:
+failure is retryable
+patch was originally safe or upper review
+file count is small
+retry count is 0
+no security/policy block
+Output routing
+If retry succeeds
+commit
+log "auto-fixed": true
+append timeline event:
+Auto-fix succeeded
+If retry fails
+move corrected patch to grouped UI
+append timeline event:
+Auto-fix failed, manual review required
+What to tell the agent
+Short brief
+
+Build a one-pass auto-fix retry loop for failed AI patches.
+
+Requirements:
+
+classify retryable vs non-retryable failures
+allow only 1 retry
+build compact retry prompt using failure reason
+request corrected PATCH blocks only
+re-validate, re-score, and re-run through transaction system
+if retry fails, route to grouped manual review
+preserve audit, rollback, memory, and validator compliance
+
+Retry only for safe technical failures like syntax or patch-apply mismatch.
+Never retry path traversal, blocked APIs, or policy/security failures.
+
+Example success path
+AI patch
+→ transaction fails: SYNTAX_ERROR
+→ retryManager builds correction prompt
+→ AI returns corrected patch
+→ confidence score = SAFE 88
+→ auto-commit
+→ timeline logs auto-fix success
+After this
+
+The next major layer would be:
+
+Learning confidence model
+so score thresholds improve based on real success/failure history.
+
+/////////////////
+
+Agent Brief — Auto-Fix Retry Loop (Ultra-Short)
+
+Build a one-pass retry system for failed AI patches.
+
+On transaction failure → classify error
+If retryable (syntax, patch mismatch) → proceed
+If non-retryable (path traversal, policy) → skip retry
+Build retry prompt using:
+failure reason
+same target
+PATCH mode only
+Request corrected PATCH from AI
+Parse → validate → re-score → execute
+Allow only 1 retry
+If retry succeeds → auto-commit + log "auto-fixed"
+If retry fails → send to grouped UI
+Must preserve:
+transaction safety (atomic + rollback)
+validator rules
+audit + memory logging
+
+Goal: enable controlled self-correction without unsafe automation
+

@@ -1,0 +1,42 @@
+{
+  "name": "lb-cep-developer-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LetterBlack CEP IDE — local web shell + Electron desktop wrapper.",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node ./scripts/dev-server.mjs",
+    "start": "node ./scripts/dev-server.mjs",
+    "electron": "electron --disable-gpu --disable-gpu-compositing --in-process-gpu --disable-gpu-sandbox .",
+    "build": "electron-builder",
+    "check:structure": "node ./scripts/check-structure.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-packager": "^17.1.2"
+  },
+  "build": {
+    "appId": "com.letterblack.ide",
+    "productName": "LetterBlack CEP IDE",
+    "files": [
+      "app/**/*",
+      "electron/**/*",
+      "core/**/*",
+      "adapters/**/*",
+      "browser/**/*",
+      "scripts/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "dir"
+    }
+  }
+}

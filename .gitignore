@@ -1,0 +1,18 @@
+# Node dependencies
+**/node_modules/
+
+# Compiled Electron apps and IDE runtime sessions
+**/dist/
+**/.electron-data/
+**/.ide-session/
+**/.claude/
+
+# Local build reports, dev environments, and temporary tests
+**/.build-report/
+**/release-out/
+**/temp-dist-live-smoke/
+**/dev-target/
+
+# OS-specific files
+.DS_Store
+Thumbs.db

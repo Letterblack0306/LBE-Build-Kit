@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ext-build config",
+  "type": "object",
+  "required": ["identity", "paths", "versioning", "validation"],
+  "properties": {
+    "project": {
+      "type": "object"
+    },
+    "identity": {
+      "type": "object",
+      "required": ["extensionId"],
+      "properties": {
+        "extensionId": {
+          "type": "string"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "required": ["dist", "manifest"],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "dist": {
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        }
+      }
+    },
+    "versioning": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "requiredFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbiddenPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredEnv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "checksumAlgorithm": {
+          "type": "string"
+        },
+        "tagRequired": {
+          "type": "boolean"
+        },
+        "outputDir": {
+          "type": "string"
+        },
+        "requiredArtifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifactVersionFiles": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "base": {
+                    "type": "string",
+                    "enum": ["root", "dist"]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "bundle": {
+          "type": "object",
+          "properties": {
+            "requiredFiles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "requiredDirectories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "adapters": {
+          "type": "object",
+          "properties": {
+            "zxp": {
+              "$ref": "#/$defs/commandAdapter"
+            },
+            "inno": {
+              "$ref": "#/$defs/commandAdapter"
+            },
+            "electronDmg": {
+              "$ref": "#/$defs/commandAdapter"
+            },
+            "githubRelease": {
+              "$ref": "#/$defs/commandAdapter"
+            }
+          }
+        }
+      }
+    },
+    "dev": {
+      "type": "object",
+      "properties": {
+        "liveMode": {
+          "type": "string",
+          "enum": ["workspace-sync", "dist-live"]
+        },
+        "source": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "targetDir": {
+          "type": ["string", "null"]
+        },
+        "buildCommand": {
+          "type": ["string", "null"]
+        },
+        "debugPort": {
+          "type": "integer"
+        },
+        "hostName": {
+          "type": "string"
+        },
+        "csxsVersions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "browserUrl": {
+          "type": "string"
+        },
+        "syncExcludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "localServer": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "root": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer"
+            }
+          }
+        },
+        "reload": {
+          "type": "object",
+          "properties": {
+            "panelPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "restartPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commandAdapter": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "command": {
+          "type": ["string", "null"]
+        },
+        "outputPath": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

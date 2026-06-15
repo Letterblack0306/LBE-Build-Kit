@@ -1,0 +1,81 @@
+APP.JS SPLICE GUIDE
+===================
+
+1) LOAD ORDER
+Add these before app.js in your HTML / boot config:
+- js/modules/modelSelectionGovernance/modelSelectionTypes.js
+- js/modules/modelSelectionGovernance/providerCapabilityMap.js
+- js/modules/modelSelectionGovernance/modelSelectionContract.js
+- js/modules/modelSelectionGovernance/modelSelectionFallback.js
+- js/modules/modelSelectionGovernance/modelSelectionAudit.js
+- js/modules/modelSelectionGovernance/modelSelectionManager.js
+- integration/app.model-selection-governance.patch.js
+
+2) SETTINGS DEFAULTS
+In settingsStore.js default config, add:
+
+smartModelSelection: true,
+modelSelectionGovernance: {
+  sessionLockEnabled: true,
+  requireCapabilityMatch: true,
+  requireProviderAllowlist: true,
+  fallbackPolicy: {
+    providerOrder: ['openai', 'google', 'anthropic'],
+    allowCrossProviderFallback: true,
+    allowManualModelOverrideWhenSmartOff: true,
+    maxAttempts: 5
+  }
+}
+
+3) sendChatMessage() INTEGRATION
+Locate the block where cfg is assembled, before aiClient call.
+
+BEFORE:
+-------
+var cfg = settingsStore.load();
+var mode = getCurrentChatMode();
+var availableModels = providerRegistry.getAvailableModels(cfg.provider);
+// old smart selection logic here
+
+AFTER:
+------
+var cfg = settingsStore.load();
+var mode = getCurrentChatMode();
+var governedSelection = globalThis.__LB_applyGovernedModelSelection(cfg, mode);
+cfg = governedSelection.cfg;
+
+4) REMOVE / REPLACE OLD SMART SELECTION
+Remove any earlier direct call pattern like:
+- pickBestModel(availableModels, taskCapability)
+- cfg.model = autoModel
+- ad hoc badge writes
+
+The governance layer now owns:
+- capability resolution
+- provider rule validation
+- fallback chain
+- session lock
+- audit emission
+- badge text state
+
+5) SHOW SETTINGS
+If showSettings() populates the modal, ensure these fields are included:
+- smartModelSelection checkbox
+- modelSelectionGovernance.sessionLockEnabled checkbox
+- modelSelectionGovernance.requireCapabilityMatch checkbox
+- modelSelectionGovernance.requireProviderAllowlist checkbox
+
+6) SAVE SETTINGS
+Persist those same keys in saveSettings().
+
+7) OPTIONAL HARDENING
+If you have transaction audit / grouped file writes, append this to transaction metadata:
+
+transactionMeta.modelSelection = {
+  provider: cfg.provider,
+  model: cfg.model,
+  capability: cfg._resolvedCapability,
+  selectionMode: cfg._selectionMode,
+  strategy: cfg._selectionStrategy,
+  fallbackApplied: !!cfg._selectionFallbackApplied
+};

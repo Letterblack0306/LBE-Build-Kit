@@ -1,0 +1,9 @@
+{
+  "name": "{{PACKAGE_NAME}}",
+  "version": "{{VERSION}}",
+  "private": true,
+  "scripts": {
+    "build": "echo \"Replace with your project build command\"",
+    "validate": "echo \"Replace with your project validation command\""
+  }
+}

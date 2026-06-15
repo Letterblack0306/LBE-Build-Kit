@@ -1,0 +1,37 @@
+{
+  "name": "lbe-build-kit",
+  "version": "0.1.0",
+  "description": "Reusable build and release framework for Adobe CEP and hybrid extensions.",
+  "type": "module",
+  "bin": {
+    "ext-build": "./ext-build.mjs"
+  },
+  "scripts": {
+    "dev": "node ./ext-build.mjs dev",
+    "watch": "node ./ext-build.mjs watch",
+    "sync": "node ./ext-build.mjs sync",
+    "reload": "node ./ext-build.mjs reload",
+    "debug": "node ./ext-build.mjs debug",
+    "dev-verify": "node ./ext-build.mjs dev-verify",
+    "check": "node ./ext-build.mjs check",
+    "verify": "node ./ext-build.mjs verify",
+    "doctor": "node ./ext-build.mjs doctor",
+    "integrity": "node ./ext-build.mjs integrity",
+    "diff": "node ./ext-build.mjs diff",
+    "init": "node ./ext-build.mjs init",
+    "simulate": "node ./ext-build.mjs simulate",
+    "release": "node ./ext-build.mjs release --allow-local-release"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "adobe",
+    "cep",
+    "release",
+    "build",
+    "zxp",
+    "extension"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,1529 @@
+System State: Post-Patch Validation Summary
+
+The integration reflects a clean transition into a controlled, production-grade execution layer. The current state indicates that the core gaps previously identified have been addressed with appropriate enforcement mechanisms.
+
+1) Execution Integrity — Now Enforced
+
+Key Outcome:
+All file operations are now routed through a validated sandbox.
+
+What changed structurally:
+
+isSubPath + sanitizeRelativeFilePath + resolveProjectWritePath
+Pre-write validation before any disk interaction
+
+Impact:
+
+Eliminates path traversal vectors (../, absolute overrides)
+Enforces project-bound write scope
+Aligns with Sentinel-style policy enforcement (Adapter layer safety)
+2) Error Intelligence Layer — Standardized
+
+Key Outcome:
+All providers now emit structured, normalized errors
+
+Pipeline:
+
+Provider → Structured Throw → normalizeError() → formatErrorForChat()
+
+Resulting UX:
+
+Deterministic error surface:
+
+[openai:OPENAI_HTTP_ERROR] OpenAI request failed with 401
+No raw exceptions
+Provider-agnostic handling
+
+Strategic Gain:
+
+Enables future:
+Retry policies
+Telemetry classification
+Provider fallback routing
+3) Multi-File Write UX — Cohesive Grouping
+
+Key Outcome:
+Transition from fragmented actions → atomic grouped intent
+
+Before:
+
+Multiple independent write buttons (non-deterministic UX)
+
+Now:
+
+Single grouped panel:
+
+Suggested files (3)
+[Write All] / [Review Individually]
+
+System Behavior:
+
+Files collected → passed as array → rendered via offerGroupedFileWrites()
+Each file still validated individually via resolveProjectWritePath
+
+Impact:
+
+Aligns with intent batching
+Prepares for:
+Transactional writes
+Partial failure handling
+Rollback systems
+4) Runtime Guardrails — Immediate Feedback
+
+Key Outcome:
+Failure states are blocked early and surfaced clearly
+
+Examples:
+Scenario	Result
+../../etc/passwd	PATH_TRAVERSAL_BLOCKED
+No project loaded	Immediate NO_PROJECT toast
+API failure	Normalized provider error
+
+Impact:
+
+No silent failures
+No undefined states
+Predictable execution boundary
+5) Architectural Alignment (Important)
+
+Your system now effectively maps to a controlled execution pipeline:
+
+AI Response
+→ Error Normalization Layer
+→ Intent Extraction (file blocks)
+→ Validation (path sandbox)
+→ UI Grouping Layer
+→ User Approval
+→ Safe Execution
+
+This is now very close to your intended model:
+
+Agent → Validator → Adapter → Execution → Feedback
+
+With:
+
+Validator → path sandbox + error normalization
+Adapter → file write executor
+Feedback → structured UI + error messaging
+6) What Is Now “Production-Ready”
+
+You have successfully stabilized:
+
+Safe file system interaction
+Deterministic error handling
+Controlled multi-action execution
+Clean UI abstraction for AI intent
+
+This is no longer experimental behavior — it is governed execution.
+
+7) Remaining Strategic Gaps (Next Layer)
+
+To reach full LockStep / Sentinel-grade system, the following are still pending:
+
+A. Transaction Safety (High Priority)
+
+Currently:
+
+Writes are grouped visually, but executed independently
+
+Next step:
+
+Introduce:
+
+beginTransaction()
+→ validate all
+→ write all
+→ rollback on failure
+B. Intent Audit Logging
+
+Missing:
+
+Pre-write intent log
+Post-write result log
+
+Needed for:
+
+Replay safety
+Debug timeline integrity
+Compliance layer
+C. Write Preview Diff (UX Upgrade)
+
+Before execution:
+
+Show diff:
+
++ added lines
+- removed lines
+
+This dramatically increases trust in AI-generated changes.
+
+D. Policy Layer (Future Gate)
+
+Right now:
+
+Only path validation exists
+
+Future:
+
+File type restrictions
+Protected directories
+Rule-based execution limits
+8) Final Assessment
+
+Current maturity level:
+
+Controlled Execution System (Pre-Governance Tier)
+
+You have achieved:
+
+Safety ✔
+Clarity ✔
+Determinism ✔
+UX coherence ✔
+
+Not yet:
+
+Transactional integrity
+Full audit trail
+Policy-driven execution
+9) Strategic Positioning
+
+This system is now:
+
+A deterministic AI execution surface with validated file operations and structured error intelligence.
+
+Which is exactly the foundation required for:
+
+CEP debugger ecosystem
+External AI runners (OpenClaw integration)
+Multi-agent orchestration layer
+
+If required, next step can be:
+
+Transaction + rollback layer (code-level design)
+or
+Audit logging schema + timeline integration
+
+Both will elevate this from safe execution → governed execution.
+
+Transaction + rollback layer (code-level design)
+Audit logging schema + timeline integratio
+Transaction + Rollback Layer
+Audit Logging Schema + Timeline Integration
+
+Below is a concrete design that fits the system state you described: grouped writes, project sandboxing, normalized errors, controlled UI approval.
+
+1) Target Architecture
+
+The next stable execution path should become:
+
+AI Response
+→ detectAndOfferFileWrite()
+→ offerGroupedFileWrites()
+→ beginWriteTransaction()
+→ preflightValidateAll()
+→ audit.logIntent()
+→ stageAllWrites()
+→ commitAllWrites()
+→ audit.logResult()
+→ timeline.append()
+
+On failure:
+
+beginWriteTransaction()
+→ preflightValidateAll()
+→ audit.logIntent()
+→ stageAllWrites()
+→ commit fails on file N
+→ rollbackCommittedWrites()
+→ audit.logRollback()
+→ timeline.appendFailure()
+2) Core Design Goal
+
+You need atomic user-approved grouped writes.
+
+That means:
+
+Either all approved files are written successfully
+Or all prior writes from that batch are reverted
+Every step is audit-recorded
+Timeline can reconstruct:
+what was requested
+what was approved
+what changed
+whether rollback occurred
+final state
+3) Transaction Model
+
+Use a write transaction object.
+
+Recommended shape
+{
+  id: "txn_1742539123_ab12cd",
+  projectRoot: "/project/root",
+  createdAt: 1742539123000,
+  status: "pending", // pending | validated | staging | committed | rolled_back | failed
+  source: "chat",
+  actor: {
+    type: "ai",
+    provider: "openai",
+    model: "gpt-5",
+    sessionId: "sess_xxx"
+  },
+  files: [
+    {
+      relativePath: "src/app.js",
+      absolutePath: "/project/root/src/app.js",
+      operation: "write", // write | create | overwrite
+      proposedContent: "...",
+      originalExists: true,
+      originalContent: "...",
+      originalHash: "sha256...",
+      proposedHash: "sha256...",
+      status: "pending" // pending | staged | committed | rolled_back | failed
+    }
+  ],
+  validation: {
+    sandbox: true,
+    projectOpen: true,
+    pathTraversalBlocked: false,
+    conflicts: []
+  },
+  rollback: {
+    performed: false,
+    restoredFiles: [],
+    failedRestores: []
+  },
+  error: null
+}
+4) Write Strategy
+
+There are two viable strategies.
+
+Option A — In-memory snapshot rollback
+
+Before writing each file:
+
+read original file if exists
+store original content in transaction object
+write new content
+if later failure occurs, restore originals
+Pros
+Simple
+Fast
+Easy to add now
+Cons
+Memory heavier for large files
+Slightly weaker for very large assets
+Option B — Staged backup rollback
+
+Before overwrite:
+
+copy original file into a transaction backup folder
+write new file
+on failure restore from backup folder
+Example backup folder
+<projectRoot>/.letterblack/transactions/<txnId>/backup/...
+Pros
+Stronger durability
+Better for larger files
+Easier audit/replay/debug later
+Cons
+More filesystem work
+Needs cleanup policy
+Recommended
+
+For your system, use Option B.
+
+It is more aligned with your broader governance model.
+
+5) Folder Layout for Transaction Staging
+
+Inside project root:
+
+.project/
+.letterblack/
+  audit/
+    audit-log.ndjson
+  transactions/
+    txn_1742539123_ab12cd/
+      manifest.json
+      backup/
+        src/
+          app.js
+          styles.css
+      staged/
+      result.json
+
+If you do not want hidden state inside the project itself, move it to app data.
+But for debugging and deterministic local recovery, project-local hidden folder is stronger.
+
+6) Core APIs
+6.1 Begin transaction
+function beginWriteTransaction({ projectRoot, actor, files, source }) {
+  return {
+    id: generateTxnId(),
+    projectRoot,
+    createdAt: Date.now(),
+    status: "pending",
+    source: source || "chat",
+    actor,
+    files: files.map(file => ({
+      relativePath: file.relativePath,
+      absolutePath: file.absolutePath,
+      operation: file.operation || "write",
+      proposedContent: file.content,
+      originalExists: false,
+      originalContent: null,
+      originalHash: null,
+      proposedHash: hashString(file.content),
+      status: "pending"
+    })),
+    validation: {
+      sandbox: false,
+      projectOpen: false,
+      pathTraversalBlocked: false,
+      conflicts: []
+    },
+    rollback: {
+      performed: false,
+      restoredFiles: [],
+      failedRestores: []
+    },
+    error: null
+  };
+}
+6.2 Preflight validation
+
+This must happen before any backup or write.
+
+function preflightValidateAll(txn, context) {
+  if (!context.projectRoot) {
+    throw createStructuredError("system", "NO_PROJECT", "No project is open");
+  }
+
+  txn.validation.projectOpen = true;
+
+  txn.files.forEach(file => {
+    const resolved = resolveProjectWritePath(context.projectRoot, file.relativePath);
+    file.absolutePath = resolved.absolutePath;
+  });
+
+  txn.validation.sandbox = true;
+  txn.status = "validated";
+
+  return txn;
+}
+Add these checks too
+duplicate target paths in same batch
+blocked extensions if needed
+protected paths list
+oversized content threshold
+unresolved relative path
+invalid filename characters if cross-platform compatibility matters
+6.3 Stage backups
+function stageAllWrites(txn, fsApi) {
+  txn.status = "staging";
+
+  txn.files.forEach(file => {
+    if (fsApi.exists(file.absolutePath)) {
+      file.originalExists = true;
+      file.originalContent = fsApi.readFile(file.absolutePath, "utf8");
+      file.originalHash = hashString(file.originalContent);
+
+      const backupPath = getBackupPath(txn, file.relativePath);
+      fsApi.ensureDir(dirname(backupPath));
+      fsApi.writeFile(backupPath, file.originalContent, "utf8");
+    } else {
+      file.originalExists = false;
+    }
+
+    file.status = "staged";
+  });
+
+  persistTransactionManifest(txn, fsApi);
+  return txn;
+}
+6.4 Commit writes
+function commitAllWrites(txn, fsApi) {
+  const committed = [];
+
+  try {
+    for (const file of txn.files) {
+      fsApi.ensureDir(dirname(file.absolutePath));
+      fsApi.writeFile(file.absolutePath, file.proposedContent, "utf8");
+      file.status = "committed";
+      committed.push(file.relativePath);
+    }
+
+    txn.status = "committed";
+    return txn;
+  } catch (err) {
+    txn.error = normalizeError(err);
+    rollbackCommittedWrites(txn, fsApi, committed);
+    throw err;
+  }
+}
+6.5 Rollback
+function rollbackCommittedWrites(txn, fsApi, committedPaths) {
+  txn.rollback.performed = true;
+
+  for (const relativePath of committedPaths.slice().reverse()) {
+    const file = txn.files.find(f => f.relativePath === relativePath);
+
+    try {
+      if (file.originalExists) {
+        const backupPath = getBackupPath(txn, relativePath);
+        const backupContent = fsApi.readFile(backupPath, "utf8");
+        fsApi.writeFile(file.absolutePath, backupContent, "utf8");
+      } else {
+        if (fsApi.exists(file.absolutePath)) {
+          fsApi.unlink(file.absolutePath);
+        }
+      }
+
+      file.status = "rolled_back";
+      txn.rollback.restoredFiles.push(relativePath);
+    } catch (restoreErr) {
+      txn.rollback.failedRestores.push({
+        relativePath,
+        error: normalizeError(restoreErr)
+      });
+    }
+  }
+
+  txn.status = txn.rollback.failedRestores.length ? "failed" : "rolled_back";
+}
+7) Recommended Execution Wrapper
+
+Create one orchestrator instead of spreading logic through UI handlers.
+
+executeWriteTransaction()
+function executeWriteTransaction({ projectRoot, actor, source, files, fsApi, audit, timeline }) {
+  const txn = beginWriteTransaction({ projectRoot, actor, files, source });
+
+  try {
+    preflightValidateAll(txn, { projectRoot });
+    audit.logIntent(txn);
+    timeline.pushTransactionStart(txn);
+
+    stageAllWrites(txn, fsApi);
+    audit.logStage(txn);
+
+    commitAllWrites(txn, fsApi);
+    audit.logCommit(txn);
+    timeline.pushTransactionSuccess(txn);
+
+    finalizeTransactionArtifacts(txn, fsApi);
+    return txn;
+  } catch (err) {
+    const normalized = normalizeError(err);
+    txn.error = normalized;
+
+    audit.logFailure(txn);
+    if (txn.rollback.performed) {
+      audit.logRollback(txn);
+      timeline.pushTransactionRollback(txn);
+    } else {
+      timeline.pushTransactionFailure(txn);
+    }
+
+    finalizeTransactionArtifacts(txn, fsApi);
+    throw normalized;
+  }
+}
+8) UI Integration
+
+Your current flow likely has:
+
+detectAndOfferFileWrite()
+offerGroupedFileWrites()
+
+Update that design so group UI approval leads into one transaction execution.
+
+New flow
+detectAndOfferFileWrite(message)
+  -> parsedFiles[]
+
+offerGroupedFileWrites(parsedFiles)
+  -> user clicks "Write All"
+  -> executeWriteTransaction(...)
+Grouped UI additions
+
+The panel should show:
+
+Batch title: Suggested files (3)
+Transactional warning:
+Writes will be applied as one batch
+If one file fails, earlier writes will be reverted
+Per-file expand/collapse preview
+Optional diff preview
+Write All
+Cancel
+9) Audit Logging Schema
+
+Use NDJSON for append-only logs.
+
+That means one JSON object per line.
+It is ideal for:
+
+easy append
+low corruption risk
+later filtering
+timeline replay
+File
+.letterblack/audit/audit-log.ndjson
+9.1 Event types
+
+Recommended event types:
+
+txn.intent
+txn.validation_passed
+txn.stage_completed
+txn.commit_completed
+txn.rollback_completed
+txn.failed
+txn.ui_approved
+txn.ui_rejected
+9.2 Base schema
+
+Every event should include:
+
+{
+  eventId: "evt_1742539125_abc123",
+  eventType: "txn.intent",
+  timestamp: 1742539125123,
+  txnId: "txn_1742539123_ab12cd",
+  sessionId: "sess_xxx",
+  source: "chat",
+  actor: {
+    type: "ai",
+    provider: "openai",
+    model: "gpt-5"
+  },
+  projectRoot: "/project/root",
+  summary: {
+    fileCount: 3,
+    status: "validated"
+  },
+  payload: { ... }
+}
+9.3 Intent event example
+{
+  eventId: "evt_01",
+  eventType: "txn.intent",
+  timestamp: 1742539125123,
+  txnId: "txn_01",
+  sessionId: "sess_01",
+  source: "chat",
+  actor: {
+    type: "ai",
+    provider: "openai",
+    model: "gpt-5"
+  },
+  projectRoot: "/project/root",
+  summary: {
+    fileCount: 2,
+    status: "validated"
+  },
+  payload: {
+    files: [
+      {
+        relativePath: "src/app.js",
+        operation: "overwrite",
+        proposedHash: "sha256:abc",
+        originalHash: "sha256:def"
+      },
+      {
+        relativePath: "src/styles.css",
+        operation: "create",
+        proposedHash: "sha256:ghi",
+        originalHash: null
+      }
+    ]
+  }
+}
+9.4 Commit event example
+{
+  eventId: "evt_02",
+  eventType: "txn.commit_completed",
+  timestamp: 1742539126123,
+  txnId: "txn_01",
+  sessionId: "sess_01",
+  source: "chat",
+  actor: {
+    type: "ai",
+    provider: "openai",
+    model: "gpt-5"
+  },
+  projectRoot: "/project/root",
+  summary: {
+    fileCount: 2,
+    status: "committed"
+  },
+  payload: {
+    committedFiles: [
+      "src/app.js",
+      "src/styles.css"
+    ]
+  }
+}
+9.5 Rollback event example
+{
+  eventId: "evt_03",
+  eventType: "txn.rollback_completed",
+  timestamp: 1742539126450,
+  txnId: "txn_01",
+  sessionId: "sess_01",
+  source: "chat",
+  actor: {
+    type: "ai",
+    provider: "openai",
+    model: "gpt-5"
+  },
+  projectRoot: "/project/root",
+  summary: {
+    fileCount: 2,
+    status: "rolled_back"
+  },
+  payload: {
+    restoredFiles: ["src/app.js"],
+    deletedCreatedFiles: ["src/styles.css"],
+    failedRestores: []
+  }
+}
+10) Timeline Integration
+
+You already mentioned debug timeline normalization.
+Now treat timeline as a projection of audit events, not a separate truth source.
+
+Correct model
+Audit log = source of truth
+Timeline = rendered view of selected audit events
+
+That is the right governance structure.
+
+10.1 Timeline event adapter
+
+Create a mapper:
+
+function auditEventToTimelineItem(event) {
+  switch (event.eventType) {
+    case "txn.intent":
+      return {
+        type: "write_intent",
+        time: event.timestamp,
+        label: `Proposed ${event.summary.fileCount} file write${event.summary.fileCount > 1 ? "s" : ""}`,
+        txnId: event.txnId,
+        status: "pending"
+      };
+
+    case "txn.commit_completed":
+      return {
+        type: "write_commit",
+        time: event.timestamp,
+        label: `Committed ${event.summary.fileCount} file write${event.summary.fileCount > 1 ? "s" : ""}`,
+        txnId: event.txnId,
+        status: "success"
+      };
+
+    case "txn.rollback_completed":
+      return {
+        type: "write_rollback",
+        time: event.timestamp,
+        label: `Rolled back transaction`,
+        txnId: event.txnId,
+        status: "warning"
+      };
+
+    case "txn.failed":
+      return {
+        type: "write_failed",
+        time: event.timestamp,
+        label: event.payload && event.payload.error
+          ? event.payload.error.message
+          : "Transaction failed",
+        txnId: event.txnId,
+        status: "error"
+      };
+
+    default:
+      return null;
+  }
+}
+10.2 Timeline grouping
+
+For UI clarity, one transaction should render as an expandable group:
+
+Collapsed
+[10:15:22] Suggested files (3) — committed
+Expanded
+Transaction: txn_01
+Status: committed
+Files:
+- src/app.js
+- src/styles.css
+- src/utils.js
+Provider: openai / gpt-5
+
+If rollback occurred:
+
+[10:15:22] Suggested files (3) — failed, rolled back
+10.3 Timeline statuses
+
+Use a fixed set:
+
+pending
+validated
+staged
+success
+warning
+error
+
+Avoid ad hoc labels.
+
+11) Manifest File
+
+Each transaction folder should write a manifest.
+
+Example
+{
+  "txnId": "txn_01",
+  "createdAt": 1742539123000,
+  "status": "committed",
+  "projectRoot": "/project/root",
+  "files": [
+    {
+      "relativePath": "src/app.js",
+      "operation": "overwrite",
+      "originalExists": true,
+      "originalHash": "sha256:def",
+      "proposedHash": "sha256:abc",
+      "status": "committed"
+    }
+  ],
+  "rollback": {
+    "performed": false,
+    "restoredFiles": [],
+    "failedRestores": []
+  },
+  "error": null
+}
+
+This is useful for:
+
+recovery after crash
+postmortem debugging
+replay tooling
+future “history restore” UI
+12) Crash Recovery
+
+This matters.
+
+If app crashes:
+
+during stage
+during commit
+before rollback completes
+
+You need recovery logic at startup.
+
+On startup
+
+Scan:
+
+.letterblack/transactions/
+
+For transactions with status:
+
+staging
+validated
+pending
+failed with incomplete rollback
+
+Then:
+
+mark them as interrupted
+if partial commit suspected, attempt recovery from backup
+log:
+txn.recovery_detected
+txn.recovery_completed
+txn.recovery_failed
+
+This makes the system materially stronger.
+
+13) Suggested Module Split
+
+To keep app.js from becoming overloaded, split into small modules.
+
+Recommended structure
+js/
+  modules/
+    transactions/
+      transactionManager.js
+      transactionAudit.js
+      transactionTimeline.js
+      transactionPaths.js
+      transactionRecovery.js
+Roles
+transactionManager.js
+beginWriteTransaction
+preflightValidateAll
+stageAllWrites
+commitAllWrites
+rollbackCommittedWrites
+executeWriteTransaction
+transactionAudit.js
+logIntent
+logValidation
+logStage
+logCommit
+logFailure
+logRollback
+appendAuditEvent
+transactionTimeline.js
+auditEventToTimelineItem
+pushTransactionStart
+pushTransactionSuccess
+pushTransactionFailure
+pushTransactionRollback
+transactionPaths.js
+getTransactionRoot
+getBackupPath
+getManifestPath
+getAuditLogPath
+transactionRecovery.js
+scanInterruptedTransactions
+recoverTransaction
+markInterrupted
+14) Minimal Code Contracts
+Error shape
+
+Keep normalized error shape strict:
+
+{
+  provider: "system",
+  code: "PATH_TRAVERSAL_BLOCKED",
+  message: "Write path escapes project root",
+  retryable: false,
+  meta: {}
+}
+Audit event shape
+
+Keep strict:
+
+{
+  eventId,
+  eventType,
+  timestamp,
+  txnId,
+  sessionId,
+  source,
+  actor,
+  projectRoot,
+  summary,
+  payload
+}
+Timeline item shape
+
+Keep strict:
+
+{
+  id,
+  type,
+  time,
+  label,
+  txnId,
+  status,
+  meta
+}
+15) Recommended Commit Semantics
+
+Use this exact order:
+
+Success path
+Validate all paths
+Snapshot/backup originals
+Persist manifest
+Log txn.intent
+Log txn.stage_completed
+Commit all writes
+Update manifest to committed
+Log txn.commit_completed
+Failure path
+Detect error
+Normalize error
+Attempt rollback in reverse order
+Update manifest to rolled_back or failed
+Log txn.failed
+Log txn.rollback_completed if applicable
+
+Reverse-order rollback is important.
+
+16) UI/UX Recommendations
+
+For the grouped panel, add this metadata line:
+
+3 files • atomic batch • rollback enabled
+
+When commit succeeds:
+
+replace write buttons with Committed
+optionally show View details
+
+When rollback occurs:
+
+replace button state with:
+Failed — reverted
+
+That messaging is strong and trustworthy.
+
+17) What Not to Do
+
+Avoid these design mistakes:
+
+Do not
+write files one by one directly from UI button handlers
+let timeline be the source of truth
+skip backup for “small files only”
+log only success and not intent
+mix raw provider errors into transaction logs
+allow per-file sandbox bypass after grouped approval
+18) Best Next Implementation Order
+Phase 1 — Transaction skeleton
+
+Implement:
+
+beginWriteTransaction
+preflightValidateAll
+executeWriteTransaction
+Phase 2 — Backup + rollback
+
+Implement:
+
+backup folder creation
+rollbackCommittedWrites
+Phase 3 — Audit layer
+
+Implement:
+
+NDJSON append logger
+event schemas
+manifest persistence
+Phase 4 — Timeline projection
+
+Implement:
+
+audit → timeline adapter
+grouped transaction row UI
+Phase 5 — Recovery
+
+Implement:
+
+interrupted transaction scan
+restore workflow
+19) Final Strategic Outcome
+
+Once this is in place, your system becomes:
+
+A transactional AI write executor with append-only audit logging and replayable timeline state.
+
+That is a major upgrade from “safe writes.”
+
+It becomes:
+
+atomic
+recoverable
+inspectable
+governable
+
+Which is exactly the correct direction for LetterBlack / LockStep style execution.
+
+20) Recommended Pseudocode Blueprint
+async function onWriteAllApproved(groupedFiles) {
+  const txn = executeWriteTransaction({
+    projectRoot: getOpenProjectRoot(),
+    actor: getCurrentActorMetadata(),
+    source: "chat",
+    files: groupedFiles,
+    fsApi,
+    audit,
+    timeline
+  });
+
+  return txn;
+}
+
+And internally:
+
+function executeWriteTransaction(ctx) {
+  const txn = beginWriteTransaction(ctx);
+
+  try {
+    preflightValidateAll(txn, ctx);
+    audit.logIntent(txn);
+    stageAllWrites(txn, ctx.fsApi);
+    audit.logStage(txn);
+    commitAllWrites(txn, ctx.fsApi);
+    audit.logCommit(txn);
+    timeline.pushTransactionSuccess(txn);
+    return txn;
+  } catch (err) {
+    txn.error = normalizeError(err);
+    audit.logFailure(txn);
+
+    if (txn.rollback.performed) {
+      audit.logRollback(txn);
+      timeline.pushTransactionRollback(txn);
+    } else {
+      timeline.pushTransactionFailure(txn);
+    }
+
+    throw txn.error;
+  }
+}
+
+I can turn this next into a drop-in implementation spec for your current app.js / module structure, with exact function signatures and file layout.
+
+module structure, with exact function signatures and file layout
+Module Structure — Production-Ready Layout
+
+Designed to integrate cleanly with your current app.js while isolating transaction logic, audit, and timeline projection.
+
+1) Folder Layout
+/js/
+  app.js
+
+  /modules/
+    /transactions/
+      transactionManager.js
+      transactionValidator.js
+      transactionStaging.js
+      transactionCommit.js
+      transactionRollback.js
+      transactionPaths.js
+      transactionAudit.js
+      transactionTimeline.js
+      transactionRecovery.js
+      transactionTypes.js
+2) Module Responsibilities (Strict Separation)
+Module	Responsibility
+transactionManager	Orchestrator (entry point)
+transactionValidator	All preflight checks
+transactionStaging	Backup + snapshot
+transactionCommit	Actual write execution
+transactionRollback	Recovery logic
+transactionPaths	All path generation
+transactionAudit	NDJSON logging
+transactionTimeline	UI projection
+transactionRecovery	Crash recovery
+transactionTypes	shared schemas/constants
+3) Shared Types (transactionTypes.js)
+export function createTxnId() {
+  return "txn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+export function createEventId() {
+  return "evt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+export const TXN_STATUS = {
+  PENDING: "pending",
+  VALIDATED: "validated",
+  STAGING: "staging",
+  COMMITTED: "committed",
+  ROLLED_BACK: "rolled_back",
+  FAILED: "failed"
+};
+
+export const FILE_STATUS = {
+  PENDING: "pending",
+  STAGED: "staged",
+  COMMITTED: "committed",
+  ROLLED_BACK: "rolled_back",
+  FAILED: "failed"
+};
+4) transactionPaths.js
+export function getTransactionRoot(projectRoot, txnId) {
+  return projectRoot + "/.letterblack/transactions/" + txnId;
+}
+
+export function getBackupPath(projectRoot, txnId, relativePath) {
+  return getTransactionRoot(projectRoot, txnId) + "/backup/" + relativePath;
+}
+
+export function getManifestPath(projectRoot, txnId) {
+  return getTransactionRoot(projectRoot, txnId) + "/manifest.json";
+}
+
+export function getAuditLogPath(projectRoot) {
+  return projectRoot + "/.letterblack/audit/audit-log.ndjson";
+}
+5) transactionValidator.js
+import { TXN_STATUS } from "./transactionTypes.js";
+
+export function preflightValidateAll(txn, ctx) {
+  const { projectRoot, resolveProjectWritePath } = ctx;
+
+  if (!projectRoot) {
+    throw createStructuredError("system", "NO_PROJECT", "No project open");
+  }
+
+  txn.files.forEach(file => {
+    const resolved = resolveProjectWritePath(projectRoot, file.relativePath);
+    file.absolutePath = resolved.absolutePath;
+  });
+
+  txn.validation = {
+    sandbox: true,
+    projectOpen: true,
+    conflicts: detectConflicts(txn.files)
+  };
+
+  if (txn.validation.conflicts.length) {
+    throw createStructuredError("system", "CONFLICT", "Duplicate file paths");
+  }
+
+  txn.status = TXN_STATUS.VALIDATED;
+  return txn;
+}
+
+function detectConflicts(files) {
+  const seen = new Set();
+  const conflicts = [];
+
+  files.forEach(f => {
+    if (seen.has(f.relativePath)) {
+      conflicts.push(f.relativePath);
+    }
+    seen.add(f.relativePath);
+  });
+
+  return conflicts;
+}
+6) transactionStaging.js
+import { FILE_STATUS, TXN_STATUS } from "./transactionTypes.js";
+import { getBackupPath } from "./transactionPaths.js";
+
+export function stageAllWrites(txn, fsApi) {
+  txn.status = TXN_STATUS.STAGING;
+
+  txn.files.forEach(file => {
+    if (fsApi.exists(file.absolutePath)) {
+      file.originalExists = true;
+      file.originalContent = fsApi.readFile(file.absolutePath, "utf8");
+
+      const backupPath = getBackupPath(txn.projectRoot, txn.id, file.relativePath);
+
+      fsApi.ensureDir(dirname(backupPath));
+      fsApi.writeFile(backupPath, file.originalContent, "utf8");
+    } else {
+      file.originalExists = false;
+    }
+
+    file.status = FILE_STATUS.STAGED;
+  });
+
+  return txn;
+}
+7) transactionCommit.js
+import { FILE_STATUS, TXN_STATUS } from "./transactionTypes.js";
+
+export function commitAllWrites(txn, fsApi) {
+  const committed = [];
+
+  for (const file of txn.files) {
+    try {
+      fsApi.ensureDir(dirname(file.absolutePath));
+      fsApi.writeFile(file.absolutePath, file.proposedContent, "utf8");
+
+      file.status = FILE_STATUS.COMMITTED;
+      committed.push(file.relativePath);
+    } catch (err) {
+      throw {
+        error: err,
+        committed
+      };
+    }
+  }
+
+  txn.status = TXN_STATUS.COMMITTED;
+  return { txn, committed };
+}
+8) transactionRollback.js
+import { FILE_STATUS, TXN_STATUS } from "./transactionTypes.js";
+import { getBackupPath } from "./transactionPaths.js";
+
+export function rollbackCommittedWrites(txn, fsApi, committedPaths) {
+  txn.rollback.performed = true;
+
+  for (const path of committedPaths.slice().reverse()) {
+    const file = txn.files.find(f => f.relativePath === path);
+
+    try {
+      if (file.originalExists) {
+        const backupPath = getBackupPath(txn.projectRoot, txn.id, path);
+        const content = fsApi.readFile(backupPath, "utf8");
+        fsApi.writeFile(file.absolutePath, content, "utf8");
+      } else {
+        if (fsApi.exists(file.absolutePath)) {
+          fsApi.unlink(file.absolutePath);
+        }
+      }
+
+      file.status = FILE_STATUS.ROLLED_BACK;
+    } catch (e) {
+      txn.rollback.failedRestores.push(path);
+    }
+  }
+
+  txn.status = txn.rollback.failedRestores.length
+    ? TXN_STATUS.FAILED
+    : TXN_STATUS.ROLLED_BACK;
+}
+9) transactionAudit.js
+import { createEventId } from "./transactionTypes.js";
+import { getAuditLogPath } from "./transactionPaths.js";
+
+export function appendAuditEvent(projectRoot, event, fsApi) {
+  const path = getAuditLogPath(projectRoot);
+  const line = JSON.stringify(event) + "\n";
+  fsApi.appendFile(path, line, "utf8");
+}
+
+export function logIntent(txn, ctx) {
+  appendAuditEvent(txn.projectRoot, {
+    eventId: createEventId(),
+    eventType: "txn.intent",
+    timestamp: Date.now(),
+    txnId: txn.id,
+    actor: ctx.actor,
+    summary: { fileCount: txn.files.length },
+    payload: {
+      files: txn.files.map(f => ({
+        relativePath: f.relativePath
+      }))
+    }
+  }, ctx.fsApi);
+}
+
+export function logCommit(txn, ctx) {
+  appendAuditEvent(txn.projectRoot, {
+    eventId: createEventId(),
+    eventType: "txn.commit_completed",
+    timestamp: Date.now(),
+    txnId: txn.id,
+    summary: { status: txn.status },
+    payload: {}
+  }, ctx.fsApi);
+}
+
+export function logFailure(txn, ctx) {
+  appendAuditEvent(txn.projectRoot, {
+    eventId: createEventId(),
+    eventType: "txn.failed",
+    timestamp: Date.now(),
+    txnId: txn.id,
+    payload: txn.error
+  }, ctx.fsApi);
+}
+
+export function logRollback(txn, ctx) {
+  appendAuditEvent(txn.projectRoot, {
+    eventId: createEventId(),
+    eventType: "txn.rollback_completed",
+    timestamp: Date.now(),
+    txnId: txn.id,
+    payload: txn.rollback
+  }, ctx.fsApi);
+}
+10) transactionTimeline.js
+export function auditEventToTimelineItem(event) {
+  switch (event.eventType) {
+    case "txn.intent":
+      return {
+        type: "txn_start",
+        time: event.timestamp,
+        label: "Proposed " + event.summary.fileCount + " files",
+        txnId: event.txnId,
+        status: "pending"
+      };
+
+    case "txn.commit_completed":
+      return {
+        type: "txn_commit",
+        time: event.timestamp,
+        label: "Committed",
+        txnId: event.txnId,
+        status: "success"
+      };
+
+    case "txn.rollback_completed":
+      return {
+        type: "txn_rollback",
+        time: event.timestamp,
+        label: "Rolled back",
+        txnId: event.txnId,
+        status: "warning"
+      };
+
+    case "txn.failed":
+      return {
+        type: "txn_failed",
+        time: event.timestamp,
+        label: "Failed",
+        txnId: event.txnId,
+        status: "error"
+      };
+
+    default:
+      return null;
+  }
+}
+11) transactionManager.js (CORE ENTRY POINT)
+import { createTxnId } from "./transactionTypes.js";
+import { preflightValidateAll } from "./transactionValidator.js";
+import { stageAllWrites } from "./transactionStaging.js";
+import { commitAllWrites } from "./transactionCommit.js";
+import { rollbackCommittedWrites } from "./transactionRollback.js";
+import { logIntent, logCommit, logFailure, logRollback } from "./transactionAudit.js";
+
+export function executeWriteTransaction(ctx) {
+  const txn = createTransaction(ctx);
+
+  try {
+    preflightValidateAll(txn, ctx);
+    logIntent(txn, ctx);
+
+    stageAllWrites(txn, ctx.fsApi);
+
+    const { committed } = commitAllWrites(txn, ctx.fsApi);
+
+    logCommit(txn, ctx);
+    return txn;
+
+  } catch (err) {
+    const normalized = ctx.normalizeError(err);
+    txn.error = normalized;
+
+    if (err.committed && err.committed.length) {
+      rollbackCommittedWrites(txn, ctx.fsApi, err.committed);
+      logRollback(txn, ctx);
+    }
+
+    logFailure(txn, ctx);
+    throw normalized;
+  }
+}
+
+function createTransaction(ctx) {
+  return {
+    id: createTxnId(),
+    projectRoot: ctx.projectRoot,
+    createdAt: Date.now(),
+    status: "pending",
+    files: ctx.files.map(f => ({
+      relativePath: f.relativePath,
+      proposedContent: f.content,
+      status: "pending"
+    })),
+    rollback: {
+      performed: false,
+      failedRestores: []
+    },
+    error: null
+  };
+}
+12) Integration Point (app.js)
+
+Replace your current grouped write execution:
+
+import { executeWriteTransaction } from "./modules/transactions/transactionManager.js";
+
+function handleWriteAll(files) {
+  return executeWriteTransaction({
+    projectRoot: getProjectRoot(),
+    files,
+    fsApi,
+    normalizeError,
+    resolveProjectWritePath,
+    actor: getActorMetadata()
+  });
+}
+13) Result
+
+You now have:
+
+Fully modular transaction system
+Atomic grouped writes
+Rollback-safe execution
+Audit-compliant logging
+Timeline-ready event structure
+14) Next Logical Upgrade (Optional)
+
+If you want to push this further:
+
+Add diff preview module
+Add transaction replay system
+Add policy engine (file type restrictions)
+
+This structure is stable enough to serve as the core execution engine for:
+
+CEP debugger
+OpenClaw runner
+Multi-agent workflows
+
+If needed, next step can be a drop-in zip-ready implementation matching your exact project paths and naming conventions.
+
+YES 
+Thought for 5s
+
+Prepared.
+
+Files:
+
+ZIP bundle
+
+Contents:
+
+js/modules/transactions/transactionTypes.js
+js/modules/transactions/transactionPaths.js
+js/modules/transactions/transactionValidator.js
+js/modules/transactions/transactionAudit.js
+js/modules/transactions/transactionTimeline.js
+js/modules/transactions/transactionStaging.js
+js/modules/transactions/transactionCommit.js
+js/modules/transactions/transactionRollback.js
+js/modules/transactions/transactionRecovery.js
+js/modules/transactions/transactionManager.js
+js/modules/transactions/README_INTEGRATION.md
+
+Important fit note:
+
+This bundle is built for a global/IIFE-style environment, not ES modules.
+That matches the stricter validator direction you described earlier better than the previous export/import sketch.
+
+What is wired:
+
+grouped transactional writes
+preflight validation
+backup staging
+commit + reverse-order rollback
+NDJSON audit logging
+timeline event projection
+interrupted transaction scan/recovery hook
+
+What you still need to connect on your side:
+
+fsApi
+normalizeError
+resolveProjectWritePath
+createStructuredError
+your existing appendTimelineItem UI hook
+your current grouped write approval button handler
+
+One implementation caveat:
+
+Hashing in this drop-in is a lightweight internal hash, not cryptographic SHA-256. It is sufficient for local state tracking, but not for trust-grade integrity. If you want Sentinel-grade audit integrity, the next patch should swap that for a stronger hash provider.
+
+Next highest-value step is the app.js integration patch against your exact current function names and load order.

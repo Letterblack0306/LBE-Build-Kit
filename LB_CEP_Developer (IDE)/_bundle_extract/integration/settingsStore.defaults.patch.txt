@@ -1,0 +1,14 @@
+Add to settingsStore default config:
+
+smartModelSelection: true,
+modelSelectionGovernance: {
+  sessionLockEnabled: true,
+  requireCapabilityMatch: true,
+  requireProviderAllowlist: true,
+  fallbackPolicy: {
+    providerOrder: ['openai', 'google', 'anthropic'],
+    allowCrossProviderFallback: true,
+    allowManualModelOverrideWhenSmartOff: true,
+    maxAttempts: 5
+  }
+}

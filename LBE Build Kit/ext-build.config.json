@@ -1,0 +1,112 @@
+{
+  "project": {
+    "name": "LBE Build Kit",
+    "type": "framework"
+  },
+  "identity": {
+    "extensionId": "com.letterblack.buildkit"
+  },
+  "paths": {
+    "source": ".",
+    "dist": ".",
+    "manifest": "manifest.xml"
+  },
+  "versioning": {
+    "files": [
+      "package.json",
+      "version.json",
+      "manifest.xml"
+    ]
+  },
+  "artifacts": {
+    "zxp": true,
+    "windowsExe": true,
+    "macDmg": true
+  },
+  "validation": {
+    "requiredFiles": [
+      "README.md",
+      "package.json",
+      "manifest.xml"
+    ],
+    "forbiddenPatterns": [
+      ".env",
+      "*.map",
+      "node_modules/**"
+    ],
+    "requiredEnv": [],
+    "requiredTools": []
+  },
+  "release": {
+    "checksumAlgorithm": "sha256",
+    "tagRequired": false,
+    "outputDir": "release-out",
+    "requiredArtifacts": [
+      "manifest.xml",
+      "version.json"
+    ],
+    "artifactVersionFiles": [
+      "manifest.xml",
+      "version.json",
+      {
+        "path": "manifest.xml",
+        "kind": "manifest",
+        "label": "dist manifest",
+        "base": "dist"
+      }
+    ],
+    "bundle": {
+      "requiredFiles": [
+        "README.md",
+        "package.json",
+        "manifest.xml"
+      ],
+      "requiredDirectories": [
+        "docs"
+      ]
+    },
+    "adapters": {
+      "zxp": {
+        "enabled": true,
+        "command": null,
+        "outputPath": null
+      },
+      "inno": {
+        "enabled": true,
+        "command": null,
+        "outputPath": null
+      },
+      "electronDmg": {
+        "enabled": true,
+        "command": null,
+        "outputPath": null
+      },
+      "githubRelease": {
+        "enabled": false,
+        "command": null,
+        "outputPath": null
+      }
+    }
+  },
+  "dev": {
+    "liveMode": "workspace-sync",
+    "source": ".",
+    "extensionId": "com.letterblack.buildkit",
+    "targetDir": "dev-target",
+    "buildCommand": null,
+    "debugPort": 8088,
+    "hostName": "AEFT",
+    "csxsVersions": ["12", "11"],
+    "browserUrl": "http://localhost:8088",
+    "syncExcludes": ["node_modules", ".git", ".build-report"],
+    "localServer": {
+      "enabled": false,
+      "root": ".",
+      "port": 3000
+    },
+    "reload": {
+      "panelPatterns": ["**/*.md", "**/*.json", "**/*.xml", "**/*.mjs"],
+      "restartPatterns": ["manifest.xml", ".debug"]
+    }
+  }
+}

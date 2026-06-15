@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LetterBlack CEP IDE</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+
+  <div class="app">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="brand">LETTERBLACK<span class="brand-sub">CEP IDE</span></div>
+        <button id="open-project-btn" class="topbar-btn">Open Project</button>
+      </div>
+      <div id="active-command-label" class="topbar-center">Idle</div>
+      <div class="topbar-right">
+        <button id="settings-btn" class="topbar-btn topbar-icon-btn" title="API Settings">⚙</button>
+        <span class="boundary-chip external">Build Kit: External</span>
+        <div id="status-bar" class="topbar-status">● ready</div>
+      </div>
+    </div>
+
+    <!-- Main Grid: explorer | resizer | editor | resizer-v | right-sidebar -->
+    <div class="main" id="main-grid">
+
+      <!-- LEFT: File Explorer / Search / History (full height) -->
+      <div class="panel" id="panel-explorer">
+        <div class="panel-title terminal-tabs" id="explorer-tabs">
+          <div class="terminal-tab active" data-target="explorer-content">Explorer</div>
+          <div class="terminal-tab" data-target="search-content">Search</div>
+          <div class="terminal-tab" data-target="history-content">History</div>
+        </div>
+
+        <div id="explorer-content" class="explorer-content active">
+          <div class="panel-title-sub">
+            <span id="project-label" class="panel-label muted">— no project open —</span>
+          </div>
+          <div id="file-tree" class="file-tree">
+            <div class="tree-hint">
+              Click <strong>Open Project</strong> above<br />to load a CEP extension folder
+            </div>
+          </div>
+        </div>
+
+        <div id="search-content" class="explorer-content search-panel">
+          <div class="search-input-group">
+            <input id="search-input" type="text" placeholder="Search..." spellcheck="false" />
+            <div class="search-options">
+              <button id="search-case-btn" title="Match Case">Aa</button>
+              <button id="search-regex-btn" title="Use Regular Expression">.*</button>
+            </div>
+          </div>
+          <div id="search-results" class="search-results">
+            <div class="tree-hint">Enter search term above</div>
+          </div>
+        </div>
+
+        <div id="history-content" class="explorer-content">
+          <ul id="history-list" class="history-list">
+            <li class="history-empty">No commands yet</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- RESIZER: left ↔ editor -->
+      <div class="resizer resizer-h" id="resizer-left"></div>
+
+      <!-- CENTER: Editor (top) + Terminal (bottom) -->
+      <div id="center-col" class="center-col">
+
+        <!-- Editor area -->
+        <div class="panel" id="panel-editor">
+          <div id="editor-panes" class="editor-panes">
+            <!-- Dynamic panes inserted here -->
+          </div>
+        </div>
+
+        <!-- Vertical resizer: editor ↔ terminal -->
+        <div class="resizer resizer-v" id="resizer-bottom"></div>
+
+        <!-- Terminal / Debug -->
+        <div id="bottom-row" class="bottom-row">
+
+          <div class="panel" id="panel-terminal">
+            <div class="panel-title terminal-tabs" id="terminal-tabs">
+              <!-- Dynamic terminal tabs -->
+            </div>
+            <button id="new-terminal-btn" class="terminal-tab-btn">+</button>
+            <div id="terminal-sessions" class="terminal-sessions"></div>
+            <div class="terminal-toolbar">
+              <select id="log-filter" class="terminal-filter" title="Filter log output by type">
+                <option value="all">All Logs</option>
+                <option value="info">Info</option>
+                <option value="error">Errors</option>
+                <option value="sys">System</option>
+              </select>
+              <div class="terminal-toolbar-sep"></div>
+              <button data-command="ext-build doctor" title="Validate Node.js, tools, env vars, and extension setup">🩺 doctor</button>
+              <button data-command="ext-build check" title="Check source paths, manifest identity, and config">✓ check</button>
+              <button data-command="ext-build dev-verify" title="Verify active dev adapter and live sync target">⬡ dev-verify</button>
+              <div class="terminal-toolbar-sep"></div>
+              <button data-command="ext-build dev" title="Start dev mode — sync and open debug (dry-run)">▶ dev</button>
+              <button data-command="ext-build sync" title="Sync extension files to CEP host target (dry-run)">⇄ sync</button>
+              <button data-command="ext-build reload" title="Send reload signal to extension in host app">↺ reload</button>
+              <button data-command="ext-build debug" title="Start debug server for extension (dry-run)">🔍 debug</button>
+              <button data-command="ext-build simulate" title="Simulate full build pipeline without side effects">⚡ simulate</button>
+              <div class="terminal-toolbar-sep"></div>
+              <button data-command="ext-build bump patch" title="Increment patch version (e.g. 1.0.0 → 1.0.1)">⬆ bump patch</button>
+              <button data-command="ext-build bump minor" title="Increment minor version (e.g. 1.0.0 → 1.1.0)">⬆ bump minor</button>
+              <button data-command="ext-build changelog" title="Generate CHANGELOG.md from git commit history">📄 changelog</button>
+            </div>
+            <div class="terminal-input-row">
+              <span class="prompt">$</span>
+              <input id="command-input" type="text" placeholder="ext-build … (external Build Kit)" autocomplete="off"
+                spellcheck="false" />
+              <button id="run-btn">Run</button>
+            </div>
+          </div>
+
+          <div class="resizer resizer-h" id="resizer-bottom-inner"></div>
+
+          <div class="panel" id="panel-debug">
+            <div class="panel-title terminal-tabs" id="debug-tabs">
+              <div class="terminal-tab active" data-target="debug-content">Inspector</div>
+              <div class="terminal-tab" data-target="browser-content">Browser</div>
+            </div>
+            <div id="debug-content" class="debug-content active">
+              <div class="debug-empty">No command selected</div>
+            </div>
+            <div id="browser-content" class="debug-content browser-panel">
+              <div class="browser-toolbar">
+                <button id="browser-back-btn" title="Back">←</button>
+                <button id="browser-forward-btn" title="Forward">→</button>
+                <button id="browser-reload-btn" title="Reload">↻</button>
+                <input type="text" id="browser-url-input" placeholder="http://localhost:8088" spellcheck="false" />
+                <button id="browser-go-btn">Go</button>
+              </div>
+              <div id="browser-container" class="browser-container">
+                <webview id="debug-webview" src="about:blank"
+                  style="width:100%;height:100%;border:none;background:#fff;"></webview>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /bottom-row -->
+      </div><!-- /center-col -->
+
+      <!-- RESIZER: editor ↔ right sidebar -->
+      <div class="resizer resizer-h" id="resizer-right"></div>
+
+      <!-- RIGHT SIDEBAR: AI Chat / Sys / Health / Project / Guide (full height) -->
+      <div class="panel" id="panel-right">
+        <div class="panel-title terminal-tabs" id="right-tabs">
+          <div class="terminal-tab active" data-target="panel-chat-content" title="AI Chat">Chat</div>
+          <div class="terminal-tab" data-target="panel-status-content" title="System &amp; Git status">System</div>
+          <div class="terminal-tab" data-target="panel-health-content" title="Build Kit health audit">Health</div>
+          <div class="terminal-tab" data-target="panel-project-content" title="Project info &amp; stats">Project</div>
+          <div class="terminal-tab" data-target="panel-about-content" title="Keyboard shortcuts &amp; commands">Guide</div>
+        </div>
+
+        <!-- AI Chat (default) -->
+        <div id="panel-chat-content" class="right-content active chat-panel">
+          <div class="chat-header">
+            <div class="chat-selectors">
+              <select id="agent-selector" title="Default AI provider (Smart Selection may override)">
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+                <option value="local">Local LLM</option>
+              </select>
+              <span id="active-model-badge" class="model-badge" title="Active model — set in ⚙ Settings">—</span>
+              <select id="chat-mode-selector" title="Chat mode — affects how the AI responds">
+                <option value="chat">💬 Chat</option>
+                <option value="build">🔨 Build</option>
+                <option value="fix">🔧 Fix</option>
+                <option value="plan">📋 Plan</option>
+              </select>
+              <span id="chat-active-context" class="chat-active-context" title="Active file context sent to AI">Context: none</span>
+            </div>
+            <button id="chat-clear-btn" class="muted" title="Clear chat history">✕ Clear</button>
+          </div>
+          <div id="chat-messages" class="chat-messages">
+            <div class="chat-msg ai">Hello! How can I help with your CEP extension?</div>
+          </div>
+          <div class="chat-input-row">
+            <input type="file" id="chat-image-input" accept="image/*" style="display:none" />
+            <div class="chat-input-top">
+              <button id="chat-image-btn" class="muted chat-image-btn" title="Attach image">&#128444;</button>
+              <textarea id="chat-input" placeholder="Ask AI about your extension…" spellcheck="false"></textarea>
+              <button id="chat-send-btn">Send</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sys status -->
+        <div id="panel-status-content" class="right-content">
+          <div class="status-items">
+            <div class="status-item">
+              <div class="si-label">Mode</div>
+              <div class="si-value" id="sys-mode">web shell</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Platform</div>
+              <div class="si-value" id="sys-platform">—</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Port</div>
+              <div class="si-value">4173</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Stage</div>
+              <div class="si-value accent">1 → <span id="stage-next">Electron next</span></div>
+            </div>
+            <div class="status-item" id="project-status-item" hidden>
+              <div class="si-label">Project</div>
+              <div class="si-value muted" id="sys-project">—</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Git Branch</div>
+              <div class="si-value" id="git-branch">—</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Git Status</div>
+              <div class="si-value" id="git-status">—</div>
+            </div>
+            <div class="status-item">
+              <div class="si-label">Last Commit</div>
+              <div class="si-value muted" id="git-commit">—</div>
+            </div>
+          </div>
+          <div class="status-actions">
+            <button id="git-refresh-btn" class="topbar-btn">Refresh Git</button>
+          </div>
+
+          <div class="git-workflow-panel">
+            <div class="git-workflow-title">Git Workflow</div>
+            <div class="git-row">
+              <span class="muted">Current:</span>
+              <span id="git-current-branch" class="git-branch-pill">—</span>
+            </div>
+            <div class="git-row">
+              <input id="git-new-branch-input" type="text" placeholder="feature/2026-04-17-task" />
+              <button id="git-create-branch-btn" class="topbar-btn">New Branch</button>
+            </div>
+            <div class="git-row-col">
+              <label class="muted">Changes to stage</label>
+              <div id="git-stage-list" class="git-stage-list">
+                <div class="tree-hint">No changes detected</div>
+              </div>
+            </div>
+            <div class="git-row-col">
+              <label class="muted">Commit message</label>
+              <textarea id="git-commit-message" rows="3" placeholder="fix(editor): improve undo stack"></textarea>
+            </div>
+            <div class="git-row">
+              <button id="git-commit-push-btn" class="topbar-btn">Commit & Push</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Health -->
+        <div id="panel-health-content" class="right-content health-panel">
+          <div class="health-header">
+            <span class="health-title">System Health</span>
+            <span id="health-status-chip" class="health-status-chip">Idle</span>
+            <button id="run-audit-btn" class="topbar-btn">Run Audit</button>
+          </div>
+          <div class="health-summary" id="health-summary"></div>
+          <div class="health-issues-list" id="health-issues-list">
+            <div class="health-empty">Run an audit to view system health.</div>
+          </div>
+        </div>
+
+        <!-- Project Info -->
+        <div id="panel-project-content" class="right-content project-info-panel">
+          <div class="proj-section">
+            <div class="proj-label">Project</div>
+            <div class="proj-value" id="proj-name">— no project —</div>
+          </div>
+          <div class="proj-section">
+            <div class="proj-label">Root Path</div>
+            <div class="proj-value muted" id="proj-path">—</div>
+          </div>
+          <div class="proj-section">
+            <div class="proj-label">Files</div>
+            <div class="proj-value" id="proj-file-count">—</div>
+          </div>
+          <div class="proj-section">
+            <div class="proj-label">Open Tabs</div>
+            <div class="proj-value" id="proj-tab-count">—</div>
+          </div>
+          <div class="proj-section">
+            <div class="proj-label">Structure</div>
+            <div id="proj-tree-summary" class="proj-tree-summary muted">Open a project first</div>
+          </div>
+        </div>
+
+        <!-- Guide -->
+        <div id="panel-about-content" class="right-content about-panel">
+          <div class="about-section">
+            <div class="about-title">LETTERBLACK</div>
+            <div class="about-sub">CEP IDE — External Build Kit Command System</div>
+          </div>
+          <div class="about-section">
+            <div class="about-heading">Shortcuts</div>
+            <div class="about-entry"><kbd>Ctrl+P</kbd> Quick Open File</div>
+            <div class="about-entry"><kbd>Ctrl+Shift+P</kbd> Command Palette</div>
+            <div class="about-entry"><kbd>Ctrl+S</kbd> Save File</div>
+            <div class="about-entry"><kbd>Ctrl+\</kbd> Split Editor</div>
+            <div class="about-entry"><kbd>Ctrl+Shift+F</kbd> Search</div>
+          </div>
+          <div class="about-section">
+            <div class="about-heading">Chat Commands</div>
+            <div class="about-entry"><code>/search term</code> — search in project</div>
+            <div class="about-entry"><code>/read path</code> — read file (first 120 lines)</div>
+            <div class="about-entry"><code>/open path:line</code> — open file at line</div>
+          </div>
+          <div class="about-section">
+            <div class="about-heading">Build Kit (External)</div>
+            <div class="about-entry"><code>ext-build doctor</code> — Validate setup</div>
+            <div class="about-entry"><code>ext-build dev</code> — Start dev mode</div>
+            <div class="about-entry"><code>ext-build sync</code> — Sync to host</div>
+            <div class="about-entry"><code>ext-build reload</code> — Reload extension</div>
+            <div class="about-entry"><code>ext-build bump patch</code> — Bump version</div>
+          </div>
+        </div>
+
+      </div><!-- /panel-right -->
+
+    </div><!-- /main-grid -->
+  </div>
+
+  <div id="bridge-status" hidden class="bridge-status-panel"></div>
+  <div id="notifications-container" class="notifications-container"></div>
+
+  <!-- Find / Replace Overlay -->
+  <div id="find-replace-overlay" class="find-replace-overlay" hidden>
+    <div class="find-replace-bar">
+      <input id="fr-find-input" class="fr-input" type="text" placeholder="Find…" spellcheck="false" />
+      <input id="fr-replace-input" class="fr-input fr-replace" type="text" placeholder="Replace…" spellcheck="false"
+        hidden />
+      <div class="fr-nav">
+        <button id="fr-prev" title="Previous (Shift+Enter)">▲</button>
+        <button id="fr-next" title="Next (Enter)">▼</button>
+      </div>
+      <button id="fr-replace-one" hidden title="Replace">Replace</button>
+      <button id="fr-replace-all" hidden title="Replace All">All</button>
+      <span id="fr-count" class="fr-count"></span>
+      <button id="fr-toggle-replace" class="fr-toggle" title="Toggle Replace">⇄</button>
+      <button id="fr-close" class="fr-close" title="Close (Esc)">✕</button>
+    </div>
+  </div>
+
+  <!-- Status Bar Bottom -->
+  <div id="status-bar-bottom" class="statusbar-bottom">
+    <span id="sb-file" class="sb-item sb-file">No file open</span>
+    <span class="sb-sep">|</span>
+    <span id="sb-cursor" class="sb-item">Ln 1, Col 1</span>
+    <span class="sb-sep">|</span>
+    <span id="sb-lang" class="sb-item">Plain</span>
+    <span class="sb-sep">|</span>
+    <span id="sb-sentinel" class="sb-item sb-sentinel" title="Sentinel governance status">⬤ Sentinel</span>
+    <span class="sb-sep">|</span>
+    <span id="sb-encoding" class="sb-item">UTF-8</span>
+  </div>
+
+  <!-- Command Palette Modal -->
+  <div id="cp-overlay" class="command-palette-overlay">
+    <div class="command-palette">
+      <div class="cp-input-row">
+        <input id="cp-input" type="text" placeholder="Type a command to search..." autocomplete="off" />
+      </div>
+      <div id="cp-list" class="cp-list">
+        <!-- Dynamic list -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-overlay" class="command-palette-overlay">
+    <div class="command-palette settings-panel">
+      <div class="cp-input-row settings-modal-header">
+        <span class="settings-title">⚙ AI Settings</span>
+        <button id="settings-close-btn" class="settings-close-x" title="Close">✕</button>
+      </div>
+      <div class="settings-content">
+
+        <!-- SMART SELECTION TOGGLE — top of modal, prominent -->
+        <div class="settings-group settings-group-smart">
+          <div class="smart-toggle-row">
+            <div class="smart-toggle-info">
+              <span class="smart-toggle-label">Smart Model Selection</span>
+              <span class="smart-toggle-hint">Agent picks the best model per task (recommended)</span>
+            </div>
+            <label class="toggle-switch" title="When ON: agent automatically selects the best model. When OFF: always uses the model you set below.">
+              <input type="checkbox" id="settings-smart-model" checked />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div id="smart-mode-status" class="smart-mode-status">
+            <span class="smart-mode-pill on">● Smart ON — agent will auto-select model per task</span>
+          </div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-group">
+          <label>Default Provider <span class="settings-label-hint">fallback when Smart Selection is OFF</span></label>
+          <select id="settings-provider">
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Gemini</option>
+            <option value="local">Local LLM</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label>Task Capability <span class="settings-label-hint">used by Smart Selection to pick model</span></label>
+          <select id="settings-capability">
+            <option value="chat">Chat — general conversation</option>
+            <option value="code">Code — programming tasks</option>
+            <option value="image">Image — vision &amp; multimodal</option>
+            <option value="multimodal">Multimodal — all types</option>
+            <option value="any">Any — no filter</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label>Response Style</label>
+          <select id="settings-preset">
+            <option value="balanced">Balanced — default</option>
+            <option value="strict">Strict — safe, minimal edits</option>
+            <option value="refactor">Refactor — structure-first</option>
+            <option value="debug">Debug — inspect &amp; explain</option>
+          </select>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-group">
+          <label>API Key</label>
+          <div class="settings-key-row">
+            <input type="password" id="settings-key" placeholder="Paste your API key here" />
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-key-visibility" />
+              <span>Show</span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-group" id="settings-model-group">
+          <label>
+            Model Override
+            <span class="settings-label-hint" id="settings-model-hint">Smart Selection is ON — leave blank to auto-select</span>
+          </label>
+          <input type="text" id="settings-model" placeholder="Auto-selected when Smart is ON" />
+          <div id="settings-model-list" class="settings-model-list"></div>
+        </div>
+        <div class="settings-group">
+          <label>Custom Endpoint <span class="settings-label-hint">optional — for self-hosted or proxy APIs</span></label>
+          <input type="text" id="settings-endpoint" placeholder="https://api.example.com/v1" />
+        </div>
+        <div class="settings-group">
+          <label>Temperature <span id="settings-temp-value" class="muted">0.7</span> <span class="settings-label-hint">creativity (0 = deterministic, 1 = creative)</span></label>
+          <input type="range" id="settings-temperature" min="0" max="1" step="0.1" value="0.7" />
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-group settings-profiles-group">
+          <label>Saved Profiles <span class="settings-label-hint">save/load complete configurations</span></label>
+          <div class="settings-profile-row">
+            <input type="text" id="settings-profile-name" placeholder="Profile name…" />
+            <button id="settings-profile-save-btn" class="topbar-btn">Save</button>
+          </div>
+          <div class="settings-profile-row">
+            <select id="settings-profile-select">
+              <option value="">— select profile to load —</option>
+            </select>
+            <button id="settings-profile-load-btn" class="topbar-btn">Load</button>
+            <button id="settings-profile-delete-btn" class="muted">Delete</button>
+          </div>
+        </div>
+        <div class="settings-group">
+          <label>Local Settings File</label>
+          <button id="settings-reveal-btn" class="topbar-btn">📂 Reveal File</button>
+        </div>
+        <div class="settings-actions">
+          <button id="settings-save-btn" class="topbar-btn settings-save-primary">Save Settings</button>
+          <button id="settings-test-btn" class="topbar-btn">Test Connection</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Selection Governance — must load before app.js (IIFE/global pattern) -->
+  <script src="./modelSelectionGovernance/modelSelectionTypes.js"></script>
+  <script src="./modelSelectionGovernance/providerCapabilityMap.js"></script>
+  <script src="./modelSelectionGovernance/modelSelectionContract.js"></script>
+  <script src="./modelSelectionGovernance/modelSelectionFallback.js"></script>
+  <script src="./modelSelectionGovernance/modelSelectionAudit.js"></script>
+  <script src="./modelSelectionGovernance/modelSelectionManager.js"></script>
+  <script src="./app.model-selection-governance.patch.js"></script>
+  <script src="./providerRegistry.capability-patch.js"></script>
+
+  <script type="module" src="./app.js"></script>
+</body>
+
+</html>
