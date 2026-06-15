@@ -35,6 +35,7 @@ import {
   resolveDistManifestPath as resolveCoreDistManifestPath,
   resolveLiveManifestPath as resolveCoreLiveManifestPath,
   runArtifactVersionChecks as runCoreArtifactVersionChecks,
+  runForbiddenPatternsCheck as runCoreForbiddenPatternsCheck,
 } from "./packages/core/validators/index.mjs";
 
 import {
@@ -94,6 +95,7 @@ function getCoreCommandDeps() {
     runConfiguredCommand, getLiveSourceRoot,
     runRequiredFilesCheck: runCoreRequiredFilesCheck,
     runForbiddenFilesCheck: runCoreForbiddenFilesCheck,
+    runForbiddenPatternsCheck: runCoreForbiddenPatternsCheck,
     resolveLiveManifestPath: resolveCoreLiveManifestPath,
     runArtifactVersionChecks: runCoreArtifactVersionChecks,
     collectArtifacts: collectCoreArtifacts,
@@ -144,7 +146,7 @@ async function main() {
         simulate: () => runSimulateCommand(config, getCoreCommandDeps()),
         release: async () => {
           if (!process.env.CI && !args["allow-local-release"]) throw new Error("release is CI-only for now. Re-run with --allow-local-release to bypass.");
-          return await runReleaseCommand(config, { dryRun: Boolean(args["dry-run"]), publish: Boolean(args.publish) }, getCoreCommandDeps());
+          return await runReleaseCommand(config, { dryRun: Boolean(args["dry-run"]), publish: Boolean(args.publish), reset: Boolean(args.reset) }, getCoreCommandDeps());
         },
         bump: () => runBumpCommand(config, { type: args._[1] ?? "patch" }, getCoreCommandDeps()),
         "es3-check": () => runES3CheckCommand(config, getCoreCommandDeps()),

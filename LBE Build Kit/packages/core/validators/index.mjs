@@ -191,3 +191,86 @@ export function runArtifactVersionChecks(specs, canonicalVersion, namePrefix, de
 
   return checks;
 }
+
+export function runForbiddenPatternsCheck(baseDir, forbiddenPatterns, deps) {
+  const { createCheck, fileExists, listFilesRecursive, fs } = deps;
+  if (!fileExists(baseDir)) {
+    return {
+      checks: [createCheck("forbidden-patterns", true, `directory not found: ${baseDir}; skipped`)],
+      findings: []
+    };
+  }
+
+  const checks = [];
+  const findings = [];
+
+  const files = listFilesRecursive(baseDir).filter((file) => {
+    const parts = file.split("/");
+    return !parts.some(
+      (p) =>
+        p === "node_modules" ||
+        p === ".git" ||
+        p === ".build-report" ||
+        p === "dist" ||
+        p === "release-out" ||
+        p === "temp-dist-live-smoke" ||
+        p === "dev-target"
+    );
+  });
+
+  for (const relativePath of files) {
+    const ext = path.extname(relativePath).toLowerCase();
+    if (ext !== ".js" && ext !== ".jsx" && ext !== ".mjs" && ext !== ".cjs" && ext !== ".html" && ext !== ".xml") {
+      continue;
+    }
+
+    const absolutePath = path.join(baseDir, relativePath);
+    let content = "";
+    try {
+      content = fs.readFileSync(absolutePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    for (const pattern of forbiddenPatterns) {
+      const re = new RegExp(pattern.regex, "g");
+      re.lastIndex = 0;
+      if (re.test(content)) {
+        findings.push({
+          file: relativePath,
+          patternName: pattern.name,
+          severity: pattern.severity || "BLOCK"
+        });
+      }
+    }
+  }
+
+  const blockFindings = findings.filter(f => f.severity === "BLOCK");
+  const warnFindings = findings.filter(f => f.severity === "WARN_REVIEW" || f.severity === "WARN");
+
+  if (blockFindings.length > 0) {
+    checks.push(
+      createCheck(
+        "forbidden-patterns.block",
+        false,
+        `${blockFindings.length} blocking pattern(s) detected in source code.`,
+        { findings: blockFindings }
+      )
+    );
+  } else {
+    checks.push(createCheck("forbidden-patterns.block", true, "no blocking code patterns found"));
+  }
+
+  if (warnFindings.length > 0) {
+    checks.push(
+      createCheck(
+        "forbidden-patterns.warn",
+        true,
+        `${warnFindings.length} code warning(s) detected. Human review recommended.`,
+        { findings: warnFindings }
+      )
+    );
+  }
+
+  return { checks, ok: blockFindings.length === 0, findings };
+}
