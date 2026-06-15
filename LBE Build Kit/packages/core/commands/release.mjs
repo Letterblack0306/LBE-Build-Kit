@@ -140,34 +140,6 @@ function runReleaseGitChecks(config, deps, checks) {
   return { ok, branch };
 }
 
-function writeEvidenceReport(root, branch, git, checks, artifacts) {
-  const now = new Date().toISOString();
-  const lines = [
-    "=========================================",
-    "         RELEASE EVIDENCE REPORT         ",
-    "=========================================",
-    `Generated: ${now}`,
-    `Branch: ${branch ?? "unknown"}`,
-    `Commit: ${git?.commit ?? "unknown"}`,
-    `Tag: ${git?.tag ?? "none"}`,
-    "",
-    "CHECKPOINT RESULTS:",
-  ];
-
-  for (const check of checks) {
-    lines.push(`  [${check.ok ? "PASS" : "FAIL"}] ${check.name}: ${check.message}`);
-  }
-
-  lines.push("", "GENERATED ARTIFACTS:");
-  for (const art of artifacts) {
-    lines.push(`  - ${art.path} (size: ${art.size} bytes, sha256: ${art.sha256})`);
-  }
-
-  lines.push("", "FINAL VERDICT: PASS");
-
-  const reportPath = path.join(root, ".build-report", "release-evidence-report.txt");
-  const fs = require ? require("node:fs") : null; // Fallback helper if needed, but we can use imports
-}
 
 export async function runRelease(config, options = {}, deps) {
   const {
@@ -255,6 +227,10 @@ export async function runRelease(config, options = {}, deps) {
     const forbiddenPatterns = config.release?.forbiddenPatterns ?? [
       { name: "no-unsafe-eval", regex: "\\beval\\s*\\(", severity: "BLOCK" },
       { name: "no-hardcoded-local-paths", regex: "[A-Za-z]:\\\\(?!node_modules)", severity: "BLOCK" },
+      { name: "secret-google-api-key", regex: "AIza[0-9A-Za-z\\-_]{35}", severity: "BLOCK" },
+      { name: "secret-openai-key", regex: "sk-[A-Za-z0-9]{20,}", severity: "BLOCK" },
+      { name: "secret-anthropic-key", regex: "sk-ant-[A-Za-z0-9\\-_]{20,}", severity: "BLOCK" },
+      { name: "secret-github-token", regex: "gh[pousr]_[A-Za-z0-9]{36,}", severity: "BLOCK" },
     ];
     if (runForbiddenPatternsCheck) {
       const scanResult = runForbiddenPatternsCheck(path.join(root, "src"), forbiddenPatterns, deps);

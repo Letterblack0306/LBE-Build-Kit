@@ -1,11 +1,31 @@
 {
   "name": "lbe-build-kit",
   "version": "0.1.0",
-  "description": "Reusable build and release framework for Adobe CEP and hybrid extensions.",
+  "description": "Build and dev toolchain for Adobe CEP extensions — init, watch, sync, reload, debug, es3-check, and more.",
   "type": "module",
   "bin": {
     "ext-build": "./ext-build.mjs"
   },
+  "author": "Letterblack",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Letterblack0306/LBE-Build-Kit.git"
+  },
+  "files": [
+    "ext-build.mjs",
+    "ext-build.schema.json",
+    "ext-build.template.json",
+    "packages/",
+    "template.cep.debug.xml",
+    "template.cep.hostscript.jsx",
+    "template.cep.index.html",
+    "template.cep.main.js",
+    "template.cep.manifest.xml",
+    "template.cep.package.json",
+    "template.cep.README.md",
+    "template.cep.style.css",
+    "README.md"
+  ],
   "scripts": {
     "dev": "node ./ext-build.mjs dev",
     "watch": "node ./ext-build.mjs watch",
@@ -20,6 +40,9 @@
     "diff": "node ./ext-build.mjs diff",
     "init": "node ./ext-build.mjs init",
     "simulate": "node ./ext-build.mjs simulate",
+    "es3-check": "node ./ext-build.mjs es3-check",
+    "bump": "node ./ext-build.mjs bump",
+    "changelog": "node ./ext-build.mjs changelog",
     "release": "node ./ext-build.mjs release --allow-local-release"
   },
   "engines": {
@@ -28,10 +51,13 @@
   "keywords": [
     "adobe",
     "cep",
-    "release",
+    "extendscript",
     "build",
     "zxp",
-    "extension"
+    "extension",
+    "after-effects",
+    "photoshop",
+    "premiere"
   ],
   "license": "MIT"
 }
