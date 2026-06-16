@@ -1,9 +1,13 @@
+const MAX_SESSION_LOGS = 2000;
+const TRIM_TO_LOGS = 1500;
+
 export const terminalStore = {
   sessions: [
     { id: 'main', name: 'Terminal', logs: [], active: true }
   ],
   activeSessionId: 'main',
   commandToSession: {},
+  _saveTimer: null,
 
   addSession(name) {
     const id = `session-${Date.now()}`;
@@ -23,6 +27,9 @@ export const terminalStore = {
     const session = this.sessions.find(s => s.id === sessionId);
     if (session) {
       session.logs.push({ type, text, time: Date.now() });
+      if (session.logs.length > MAX_SESSION_LOGS) {
+        session.logs = session.logs.slice(-TRIM_TO_LOGS);
+      }
       this.saveToSession();
     }
   },
@@ -69,13 +76,25 @@ export const terminalStore = {
     }
   },
 
+  // Debounced — batches rapid log appends (e.g. streaming build output) into
+  // a single localStorage write per 500ms instead of one per line.
   saveToSession() {
-    const state = {
-      sessions: this.sessions,
-      activeSessionId: this.activeSessionId,
-      commandToSession: this.commandToSession
-    };
-    localStorage.setItem('terminal_session', JSON.stringify(state));
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      const state = {
+        sessions: this.sessions,
+        activeSessionId: this.activeSessionId,
+        commandToSession: this.commandToSession
+      };
+      try {
+        localStorage.setItem('terminal_session', JSON.stringify(state));
+      } catch {
+        // localStorage full — trim all sessions and retry once
+        this.sessions.forEach(s => { if (s.logs.length > 200) s.logs = s.logs.slice(-200); });
+        try { localStorage.setItem('terminal_session', JSON.stringify(state)); } catch { /* give up */ }
+      }
+    }, 500);
   },
 
   loadFromSession() {

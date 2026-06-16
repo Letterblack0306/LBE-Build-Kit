@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "protocol": "openai",
+      "endpoint": "https://api.openai.com/v1",
+      "defaultModel": "gpt-4o",
+      "apiKeyRequired": true,
+      "enabled": true
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "protocol": "anthropic",
+      "endpoint": "https://api.anthropic.com",
+      "defaultModel": "claude-sonnet-4-6",
+      "apiKeyRequired": true,
+      "enabled": true
+    },
+    {
+      "id": "gemini",
+      "label": "Google Gemini",
+      "protocol": "gemini",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "defaultModel": "gemini-1.5-pro",
+      "apiKeyRequired": true,
+      "enabled": true
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama (Local)",
+      "protocol": "ollama",
+      "endpoint": "http://localhost:11434",
+      "defaultModel": "llama3",
+      "apiKeyRequired": false,
+      "enabled": true
+    },
+    {
+      "id": "lmstudio",
+      "label": "LM Studio (Local)",
+      "protocol": "openai",
+      "endpoint": "http://localhost:1234/v1",
+      "defaultModel": "",
+      "apiKeyRequired": false,
+      "enabled": false
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "protocol": "openai",
+      "endpoint": "https://openrouter.ai/api/v1",
+      "defaultModel": "",
+      "apiKeyRequired": true,
+      "enabled": false
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "protocol": "openai",
+      "endpoint": "https://api.groq.com/openai/v1",
+      "defaultModel": "llama-3.1-70b-versatile",
+      "apiKeyRequired": true,
+      "enabled": false
+    }
+  ]
+}

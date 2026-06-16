@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld("ide", {
   // Platform info
   platform: process.platform,
 
+  // Provider + MCP config
+  loadProviders: () => ipcRenderer.invoke("load-providers"),
+  saveProviders: (config) => ipcRenderer.invoke("save-providers", config),
+  loadMcpSettings: () => ipcRenderer.invoke("load-mcp-settings"),
+  saveMcpSettings: (settings) => ipcRenderer.invoke("save-mcp-settings", settings),
+
   // Git helpers
   gitStatus: (rootPath) => ipcRenderer.invoke("git-status", rootPath),
   gitBranch: (rootPath) => ipcRenderer.invoke("git-branch", rootPath),

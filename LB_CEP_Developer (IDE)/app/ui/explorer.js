@@ -189,8 +189,15 @@ function showContextMenu(x, y, entry) {
     actions.push({ label: "Open", action: () => loadFile(entry.path) });
     actions.push({ label: "Duplicate", action: () => duplicateEntry(entry) });
   }
-  actions.push({ label: "Create File", action: () => createFileInDir(entry) });
-  actions.push({ label: "Create Folder", action: () => createFolderInDir(entry) });
+  actions.push({ label: "New File", action: () => createFileInDir(entry) });
+  actions.push({ label: "New Folder", action: () => createFolderInDir(entry) });
+  actions.push({ separator: true });
+  actions.push({ label: "Copy Path", action: () => navigator.clipboard?.writeText(entry.path) });
+  if (currentProject) {
+    const rel = entry.path.replace(currentProject, "").replace(/^[\\/]/, "");
+    actions.push({ label: "Copy Relative Path", action: () => navigator.clipboard?.writeText(rel) });
+  }
+  actions.push({ separator: true });
   actions.push({ label: "Reveal in Explorer", action: () => revealInFolder(entry) });
   actions.push({ label: "Rename", action: () => renameEntry(entry) });
   actions.push({ label: "Delete", action: () => deleteEntry(entry), color: "var(--error)" });

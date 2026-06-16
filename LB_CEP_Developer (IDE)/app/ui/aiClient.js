@@ -1,48 +1,53 @@
 // aiClient.js — LetterBlack CEP IDE AI streaming client
-// Unified async generator interface for OpenAI, Gemini, and Local LLM (Ollama)
+// Routes by protocol field, not provider id — any provider with the same protocol works.
+// Supported protocols: "openai" | "anthropic" | "gemini" | "ollama"
 
 /**
  * Stream chat completions from any configured provider.
  * @param {Array<{role: string, content: string}>} messages
- * @param {{provider: string, apiKey: string, model: string, endpoint: string}} config
+ * @param {{protocol: string, apiKey?: string, model: string, endpoint?: string}} config
  * @yields {string} text chunks as they arrive
  */
 export async function* streamChat(messages, config) {
-  const { provider, apiKey, model, endpoint } = config;
+  const { protocol, apiKey, model, endpoint } = config;
 
-  if (provider === "openai") {
-    yield* streamOpenAI(messages, { apiKey, model, endpoint });
-  } else if (provider === "gemini") {
-    yield* streamGemini(messages, { apiKey, model, temperature: config.temperature });
-  } else if (provider === "local") {
-    yield* streamLocal(messages, { endpoint, model });
-  } else {
-    throw { code: "UNSUPPORTED_PROVIDER", message: `Unsupported provider: ${provider}`, stage: "chat" };
+  switch (protocol) {
+    case "openai":
+      yield* streamOpenAI(messages, { apiKey, model, endpoint });
+      break;
+    case "anthropic":
+      yield* streamAnthropic(messages, { apiKey, model, endpoint });
+      break;
+    case "gemini":
+      yield* streamGemini(messages, { apiKey, model, temperature: config.temperature });
+      break;
+    case "ollama":
+      yield* streamOllama(messages, { endpoint, model });
+      break;
+    default:
+      throw { code: "UNSUPPORTED_PROTOCOL", message: `Unsupported protocol: ${protocol}`, stage: "chat" };
   }
 }
 
 // ── OpenAI-compatible streaming ───────────────────────────────────────────
+// Works for: OpenAI, LM Studio, vLLM, OpenRouter, Groq, Together AI, etc.
 
 async function* streamOpenAI(messages, { apiKey, model, endpoint }) {
-  const url = endpoint || "https://api.openai.com/v1/chat/completions";
+  const url = `${endpoint || "https://api.openai.com/v1"}/chat/completions`;
 
   const resp = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
-    body: JSON.stringify({
-      model: model || "gpt-4o",
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify({ model: model || "gpt-4o", messages, stream: true }),
   });
 
   if (!resp.ok) {
     let details = "";
     try { details = await resp.text(); } catch {}
-    throw { code: "OPENAI_HTTP_ERROR", message: `OpenAI request failed with ${resp.status}`, stage: "openai", details };
+    throw { code: "OPENAI_HTTP_ERROR", message: `OpenAI-compatible request failed with ${resp.status}`, stage: "openai", details };
   }
 
   const reader = resp.body.getReader();
@@ -52,11 +57,9 @@ async function* streamOpenAI(messages, { apiKey, model, endpoint }) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep incomplete last line in buffer
-
+    buffer = lines.pop();
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6).trim();
@@ -65,9 +68,64 @@ async function* streamOpenAI(messages, { apiKey, model, endpoint }) {
         const json = JSON.parse(data);
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) yield delta;
-      } catch {
-        // Partial chunk or malformed — skip safely
-      }
+      } catch {}
+    }
+  }
+}
+
+// ── Anthropic streaming ───────────────────────────────────────────────────
+
+async function* streamAnthropic(messages, { apiKey, model, endpoint }) {
+  const base = endpoint || "https://api.anthropic.com";
+  const url = `${base}/v1/messages`;
+
+  const systemMsg = messages.find((m) => m.role === "system");
+  const filtered = messages.filter((m) => m.role !== "system");
+
+  const body = {
+    model: model || "claude-sonnet-4-6",
+    max_tokens: 8192,
+    stream: true,
+    messages: filtered,
+    ...(systemMsg ? { system: systemMsg.content } : {}),
+  };
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey || "",
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    let details = "";
+    try { details = await resp.text(); } catch {}
+    throw { code: "ANTHROPIC_HTTP_ERROR", message: `Anthropic request failed with ${resp.status}`, stage: "anthropic", details };
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data) continue;
+      try {
+        const json = JSON.parse(data);
+        if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
+          yield json.delta.text;
+        }
+      } catch {}
     }
   }
 }
@@ -76,11 +134,8 @@ async function* streamOpenAI(messages, { apiKey, model, endpoint }) {
 
 async function* streamGemini(messages, { apiKey, model, temperature }) {
   const geminiModel = model || "gemini-1.5-pro";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey}&alt=sse`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey || ""}&alt=sse`;
 
-  // Gemini does NOT accept role "assistant" or "system" inside contents.
-  // system → systemInstruction (separate field, not in contents array)
-  // assistant → model
   const systemMsg = messages.find((m) => m.role === "system");
   const contents = messages
     .filter((m) => m.role !== "system")
@@ -91,13 +146,8 @@ async function* streamGemini(messages, { apiKey, model, temperature }) {
 
   const body = {
     contents,
-    generationConfig: {
-      temperature: temperature ?? 0.7,
-      maxOutputTokens: 8192
-    },
-    ...(systemMsg
-      ? { systemInstruction: { parts: [{ text: systemMsg.content }] } }
-      : {}),
+    generationConfig: { temperature: temperature ?? 0.7, maxOutputTokens: 8192 },
+    ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
   };
 
   const resp = await fetch(url, {
@@ -119,11 +169,9 @@ async function* streamGemini(messages, { apiKey, model, temperature }) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop();
-
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6).trim();
@@ -132,33 +180,26 @@ async function* streamGemini(messages, { apiKey, model, temperature }) {
         const json = JSON.parse(data);
         const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) yield text;
-      } catch {
-        // Partial chunk — skip
-      }
+      } catch {}
     }
   }
 }
 
-// ── Local LLM (Ollama-compatible) ────────────────────────────────────────
+// ── Ollama streaming ──────────────────────────────────────────────────────
 
-async function* streamLocal(messages, { endpoint, model }) {
-  // Ollama: POST /api/chat → newline-delimited JSON (NDJSON)
-  const url = endpoint || "http://localhost:11434/api/chat";
+async function* streamOllama(messages, { endpoint, model }) {
+  const url = `${endpoint || "http://localhost:11434"}/api/chat`;
 
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: model || "llama3",
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify({ model: model || "llama3", messages, stream: true }),
   });
 
   if (!resp.ok) {
     let details = "";
     try { details = await resp.text(); } catch {}
-    throw { code: "LOCAL_HTTP_ERROR", message: `Local model request failed with ${resp.status}`, stage: "local", details };
+    throw { code: "OLLAMA_HTTP_ERROR", message: `Ollama request failed with ${resp.status}`, stage: "ollama", details };
   }
 
   const reader = resp.body.getReader();
@@ -168,11 +209,9 @@ async function* streamLocal(messages, { endpoint, model }) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: false });
     const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep partial last line
-
+    buffer = lines.pop();
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -181,9 +220,7 @@ async function* streamLocal(messages, { endpoint, model }) {
         const delta = json.message?.content || json.response;
         if (delta) yield delta;
         if (json.done) return;
-      } catch {
-        // Malformed NDJSON line — skip
-      }
+      } catch {}
     }
   }
 }

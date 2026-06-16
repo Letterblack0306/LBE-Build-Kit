@@ -89,3 +89,19 @@ commandPalette.register('bk.bump_patch', 'Build Kit: Bump Patch Version', 'Build
 commandPalette.register('bk.changelog', 'Build Kit: Generate Changelog', 'Build Kit', () => {
   window.dispatchEvent(new CustomEvent('run-command', { detail: 'ext-build changelog' }));
 });
+
+commandPalette.register('bk.preflight', 'Build Kit: Preflight Check', 'Build Kit', () => {
+  window.dispatchEvent(new CustomEvent('run-command', { detail: 'ext-build preflight' }));
+});
+
+commandPalette.register('bk.hygiene', 'Build Kit: Hygiene Check', 'Build Kit', () => {
+  window.dispatchEvent(new CustomEvent('run-command', { detail: 'ext-build hygiene' }));
+});
+
+commandPalette.register('bk.sign_verify', 'Build Kit: Verify ZXP Signature', 'Build Kit', () => {
+  window.dispatchEvent(new CustomEvent('run-command', { detail: 'ext-build sign-verify' }));
+});
+
+commandPalette.register('bk.watch', 'Build Kit: Watch Mode', 'Build Kit', () => {
+  window.dispatchEvent(new CustomEvent('run-command', { detail: 'ext-build watch' }));
+});

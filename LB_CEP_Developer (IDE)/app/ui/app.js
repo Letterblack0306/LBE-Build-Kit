@@ -14,7 +14,7 @@ import {
 import { editorStore } from "./editorStore.js";
 import { terminalStore } from "./terminalStore.js";
 import { settingsStore } from "./settingsStore.js";
-import { listProviders, getProvider, fetchProviderModels, filterModelsByCapability, pickBestModel } from "./providerRegistry.js";
+import { loadProviders, listProviders, getProvider, fetchProviderModels, filterModelsByCapability, pickBestModel } from "./providerRegistry.js";
 import { chatStore } from "./chatStore.js";
 import { highlighter } from "./highlighter.js";
 import { autocomplete } from "./autocomplete.js";
@@ -125,11 +125,9 @@ const panelExplorer = document.getElementById("panel-explorer");
 const centerCol = document.getElementById("center-col");
 const panelRight = document.getElementById("panel-right");
 const bottomRow = document.getElementById("bottom-row");
-const panelDebug = document.getElementById("panel-debug");
 const resizerLeft = document.getElementById("resizer-left");
 const resizerRight = document.getElementById("resizer-right");
 const resizerBottom = document.getElementById("resizer-bottom");
-const resizerBottomInner = document.getElementById("resizer-bottom-inner");
 
 let activeResizer = null;
 
@@ -139,7 +137,6 @@ function stopResize() { activeResizer = null; document.body.style.userSelect = '
 resizerLeft?.addEventListener("mousedown", () => { startResize('left'); document.body.style.cursor = 'col-resize'; });
 resizerRight?.addEventListener("mousedown", () => { startResize('right'); document.body.style.cursor = 'col-resize'; });
 resizerBottom?.addEventListener("mousedown", () => { startResize('bottom'); document.body.style.cursor = 'row-resize'; });
-resizerBottomInner?.addEventListener("mousedown", () => { startResize('bottomInner'); document.body.style.cursor = 'col-resize'; });
 
 window.addEventListener("mousemove", (e) => {
   if (!activeResizer) return;
@@ -148,18 +145,14 @@ window.addEventListener("mousemove", (e) => {
     if (panelExplorer) panelExplorer.style.width = w + 'px';
   }
   if (activeResizer === 'right') {
-    const rightW = Math.max(240, Math.min(window.innerWidth - e.clientX, 600));
+    const rightW = Math.max(260, Math.min(window.innerWidth - e.clientX, 800));
     if (panelRight) panelRight.style.width = rightW + 'px';
   }
   if (activeResizer === 'bottom') {
     const mainTop = document.getElementById("main-grid")?.getBoundingClientRect().top ?? 40;
-    const h = Math.max(80, Math.min(e.clientY - mainTop, window.innerHeight - mainTop - 120));
-    if (document.getElementById("panel-editor")) document.getElementById("panel-editor").style.flex = 'none';
-    if (document.getElementById("panel-editor")) document.getElementById("panel-editor").style.height = h + 'px';
-  }
-  if (activeResizer === 'bottomInner') {
-    const debugW = Math.max(160, Math.min(window.innerWidth - e.clientX, 500));
-    if (panelDebug) panelDebug.style.width = debugW + 'px';
+    const chatH = Math.max(120, Math.min(e.clientY - mainTop, window.innerHeight - mainTop - 80));
+    const panelChat = document.getElementById("panel-chat");
+    if (panelChat) { panelChat.style.flex = 'none'; panelChat.style.height = chatH + 'px'; }
   }
 });
 
@@ -367,7 +360,7 @@ async function checkSentinelStatus() {
   try {
     const r = await fetch('http://localhost:8181/health', { signal: AbortSignal.timeout(2000) });
     sbSentinel.className = r.ok ? 'sb-item sb-sentinel online' : 'sb-item sb-sentinel offline';
-    sbSentinel.textContent = r.ok ? '⬤ Sentinel' : '⬤ Sentinel';
+    sbSentinel.innerHTML = `<svg class="btn-icon"><use href="#ic-dot"/></svg> Sentinel`;
   } catch {
     sbSentinel.className = 'sb-item sb-sentinel offline';
   }
@@ -469,38 +462,59 @@ function renderSearchResults(results, query) {
   });
 }
 
-// ── Right Sidebar Tabs (AI / Sys / Health / Proj / Guide) ────────────────
-const rbTabs = document.getElementById("right-tabs") || document.getElementById("right-bottom-tabs");
-const rbContents = document.querySelectorAll(".right-content, .right-bottom-content");
+// ── Right Panel Tab Management ────────────────────────────────────────────
+const rightTabsBar = document.getElementById("right-tabs");
+const rightFileTabsEl = document.getElementById("right-file-tabs");
+const rcContents = document.querySelectorAll(".rc-content");
 
-rbTabs?.addEventListener("click", (e) => {
+function activateRcTab(targetId) {
+  // Deactivate all persistent tabs in the tab bar
+  rightTabsBar?.querySelectorAll(".terminal-tab").forEach(t => t.classList.remove("active"));
+  // Show the target content area
+  rcContents.forEach(c => c.classList.toggle("active", c.id === targetId));
+  if (targetId !== "rc-editor") {
+    // Activate the matching persistent tab button
+    rightTabsBar?.querySelector(`[data-target="${targetId}"]`)?.classList.add("active");
+  }
+}
+
+rightTabsBar?.addEventListener("click", (e) => {
   const tab = e.target.closest(".terminal-tab");
-  if (!tab) return;
-
-  const targetId = tab.dataset.target;
-  rbTabs.querySelectorAll(".terminal-tab").forEach(t => t.classList.remove("active"));
-  tab.classList.add("active");
-
-  rbContents.forEach(content => {
-    content.classList.toggle("active", content.id === targetId);
-  });
+  if (!tab || !tab.dataset.target) return;
+  activateRcTab(tab.dataset.target);
 });
 
-// ── Debug Panel Tabs (Inspector / Browser) ────────────────────────────────
-const debugTabs = document.getElementById("debug-tabs");
-const debugContents = document.querySelectorAll("#panel-debug .debug-content");
-
-debugTabs?.addEventListener("click", (e) => {
-  const tab = e.target.closest(".terminal-tab");
-  if (!tab) return;
-
-  const targetId = tab.dataset.target;
-  debugTabs.querySelectorAll(".terminal-tab").forEach(t => t.classList.remove("active"));
-  tab.classList.add("active");
-
-  debugContents.forEach(content => {
-    content.classList.toggle("active", content.id === targetId);
+// Show a file in the right panel (single-file-tab behavior)
+function showFileInRightPanel(filePath, fileName) {
+  if (!rightFileTabsEl) return;
+  rightFileTabsEl.innerHTML = "";
+  const fileTab = document.createElement("div");
+  fileTab.className = "right-file-tab";
+  fileTab.innerHTML = `<span class="right-file-tab-name" title="${filePath}">${fileName}</span><span class="right-file-tab-close" title="Close">×</span>`;
+  fileTab.addEventListener("click", (e) => {
+    if (e.target.classList.contains("right-file-tab-close")) {
+      rightFileTabsEl.innerHTML = "";
+      // Close all editor tabs
+      editorStore.panes.forEach(p => { p.tabPaths = []; p.activeTabPath = null; });
+      renderEditor();
+      activateRcTab("rc-browser");
+    } else {
+      activateRcTab("rc-editor");
+    }
   });
+  rightFileTabsEl.appendChild(fileTab);
+  activateRcTab("rc-editor");
+}
+
+// Collapse / expand right panel
+document.getElementById("right-collapse-btn")?.addEventListener("click", () => {
+  const isCollapsed = panelRight?.classList.toggle("rp-collapsed");
+  const btn = document.getElementById("right-collapse-btn");
+  if (btn) btn.innerHTML = isCollapsed
+    ? `<svg class="btn-icon"><use href="#ic-chevron-left"/></svg>`
+    : `<svg class="btn-icon"><use href="#ic-chevron-right"/></svg>`;
+  const resRight = document.getElementById("resizer-right");
+  if (resRight) resRight.style.display = isCollapsed ? "none" : "";
 });
 
 // ── Debug Browser ──────────────────────────────────────────────────────────
@@ -666,8 +680,10 @@ function renderChat() {
         if (!path || !isElectron) return;
         const res = await window.ide.readFile(path);
         if (res?.ok) {
-          editorStore.addTab(path, path.split(/[\\/]/).pop(), res.content);
+          const name = path.split(/[\\/]/).pop();
+          editorStore.addTab(path, name, res.content);
           renderEditor();
+          showFileInRightPanel(path, name);
           if (line) setTimeout(() => performJump(path, Number(line) || 1), 50);
         }
       }
@@ -921,17 +937,33 @@ ${projectContext.getSystemPromptSnippet()}${behaviorHints.getHintsPrompt(session
     if (nearBottom) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
   }
 
-  // Smart model selection: pick best model for this task type if enabled
-  if (cfg.smartModelSelection !== false && _providerModels.length > 0) {
-    const taskCapability = (_chatMode === "build" || _chatMode === "fix") ? "code" : cfg.capability || "chat";
-    const bestModel = pickBestModel(_providerModels, taskCapability);
-    if (bestModel) {
-      cfg = { ...cfg, model: bestModel };
-      updateModelBadge(bestModel, true);
+  // Smart model selection: governance system first, pickBestModel as fallback
+  if (cfg.smartModelSelection !== false) {
+    let governed = false;
+    if (typeof window.__LB_applyGovernedModelSelection === "function") {
+      try {
+        const gov = window.__LB_applyGovernedModelSelection(cfg, _chatMode);
+        cfg = gov.cfg;
+        governed = true;
+      } catch {
+        // governance failed — fall through to pickBestModel
+      }
+    }
+    if (!governed && _providerModels.length > 0) {
+      const taskCapability = (_chatMode === "build" || _chatMode === "fix") ? "code" : cfg.capability || "chat";
+      const bestModel = pickBestModel(_providerModels, taskCapability);
+      if (bestModel) {
+        cfg = { ...cfg, model: bestModel };
+        updateModelBadge(bestModel, true);
+      }
     }
   } else {
-    updateModelBadge(cfg.model, cfg.smartModelSelection !== false);
+    updateModelBadge(cfg.model, false);
   }
+
+  // streamChat routes by protocol, not provider id — resolve it from the registry
+  const _provDef = getProvider(cfg.provider);
+  cfg = { ...cfg, protocol: _provDef?.protocol || cfg.provider };
 
   const activeJob = jobManager.createJob("ai_chat", settingsStore.config.provider);
 
@@ -1899,6 +1931,9 @@ function renderProviderOptions() {
 
 async function refreshProviderModels({ provider, capability, apiKey, endpoint, activeModel }) {
   if (!provider) return;
+  if (settingsModelList) {
+    settingsModelList.innerHTML = `<span class="settings-field-hint">Loading available models…</span>`;
+  }
   try {
     const models = await fetchProviderModels({ provider, apiKey, endpoint });
     _providerModels = filterModelsByCapability(models, capability || "chat");
@@ -1931,6 +1966,7 @@ function renderModelChips(provider, activeModel) {
 
 async function showSettings() {
   await settingsStore.load();
+  await loadProviders();
   renderProviderOptions();
   const cfg = settingsStore.config;
   settingsProvider.value = cfg.provider || listProviders()[0]?.id || "";
@@ -2006,10 +2042,26 @@ settingsTestBtn?.addEventListener("click", async () => {
     } else if (provider === "openai") {
       const base = endpoint || "https://api.openai.com/v1";
       const res = await fetch(`${base}/models`, {
-        headers: { Authorization: `Bearer ${apiKey}` }
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
       });
       ok = res.ok;
-    } else if (provider === "local") {
+    } else if (provider === "anthropic") {
+      const base = endpoint || "https://api.anthropic.com";
+      const res = await fetch(`${base}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 1,
+          messages: [{ role: "user", content: "ping" }]
+        })
+      });
+      ok = res.ok || res.status === 400; // 400 means bad request format but the API key authenticated successfully
+    } else if (provider === "ollama") {
       const base = endpoint || "http://localhost:11434";
       const res = await fetch(`${base}/api/tags`);
       ok = res.ok;
@@ -2056,10 +2108,90 @@ settingsOverlay?.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) hideSettings();
 });
 
+// ── Settings tab switching ────────────────────────────────────────────────
+document.querySelectorAll('.settings-tab[data-stab]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const t = tab.dataset.stab;
+    document.querySelectorAll('.settings-tab[data-stab]').forEach(b => b.classList.toggle('active', b === tab));
+    document.querySelectorAll('.settings-pane[data-stab]').forEach(p => p.classList.toggle('active', p.dataset.stab === t));
+  });
+});
+
+// ── Live Issues Feed ──────────────────────────────────────────────────────
+(function () {
+  const feed = document.getElementById('issues-feed');
+  const badge = document.getElementById('issues-error-count');
+  const clearBtn = document.getElementById('issues-clear-btn');
+  let errorCount = 0;
+
+  function pushIssue(type, msg, src) {
+    if (!feed) return;
+    const empty = feed.querySelector('.issues-empty-state');
+    if (empty) empty.remove();
+    if (type === 'error') {
+      errorCount++;
+      if (badge) { badge.textContent = String(errorCount); badge.style.display = ''; }
+    }
+    const row = document.createElement('div');
+    row.className = 'issue-row';
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    row.innerHTML =
+      `<span class="issue-badge issue-badge-${type}">${type}</span>` +
+      `<span class="issue-msg">${String(msg).replace(/</g, '&lt;')}</span>` +
+      `<span class="issue-src">${src ? String(src).replace(/</g, '&lt;') : ''}</span>` +
+      `<span class="issue-time">${ts}</span>`;
+    feed.insertBefore(row, feed.firstChild);
+    if (type === 'error') {
+      const issuesTab = document.querySelector('.terminal-tab[data-target="rc-issues"]');
+      if (issuesTab && !issuesTab.classList.contains('active')) {
+        issuesTab.classList.remove('issues-tab-pulse');
+        void issuesTab.offsetWidth;
+        issuesTab.classList.add('issues-tab-pulse');
+        setTimeout(() => issuesTab.classList.remove('issues-tab-pulse'), 2200);
+      }
+    }
+  }
+
+  window.addEventListener('error', e => {
+    const src = e.filename ? `${e.filename.split('/').pop()}:${e.lineno}` : '';
+    pushIssue('error', e.message || 'Unknown JS error', src);
+  });
+
+  window.addEventListener('unhandledrejection', e => {
+    const msg = e.reason?.message || String(e.reason) || 'Unhandled promise rejection';
+    pushIssue('error', msg, 'promise');
+  });
+
+  clearBtn?.addEventListener('click', () => {
+    errorCount = 0;
+    if (badge) { badge.textContent = '0'; badge.style.display = 'none'; }
+    if (feed) feed.innerHTML = '<div class="issues-empty-state">Cleared.</div>';
+  });
+
+  window.__IDE_pushIssue = pushIssue;
+})();
+
 settingsKeyToggle?.addEventListener("change", () => {
   if (!settingsKey) return;
   settingsKey.type = settingsKeyToggle.checked ? "text" : "password";
 });
+
+let settingsModelFetchTimeout = null;
+function debouncedRefreshSettingsModels() {
+  if (settingsModelFetchTimeout) clearTimeout(settingsModelFetchTimeout);
+  settingsModelFetchTimeout = setTimeout(() => {
+    refreshProviderModels({
+      provider: settingsProvider?.value || "",
+      capability: settingsCapability?.value || "chat",
+      apiKey: settingsKey?.value?.trim() || "",
+      endpoint: settingsEndpoint?.value?.trim() || "",
+      activeModel: settingsModel?.value || ""
+    });
+  }, 600);
+}
+
+settingsKey?.addEventListener("input", debouncedRefreshSettingsModels);
+settingsEndpoint?.addEventListener("input", debouncedRefreshSettingsModels);
 
 settingsProvider?.addEventListener("change", () => {
   const providerMeta = getProvider(settingsProvider.value);
@@ -2709,7 +2841,7 @@ function updateSuggestionPopup() {
   if (!suggestionPopup) return;
   suggestionPopup.innerHTML = currentSuggestions.map((s, i) => `
     <div class="suggestion-item ${i === selectedSuggestionIndex ? "selected" : ""}" data-index="${i}">
-      <span class="suggestion-icon">📄</span>
+      <span class="suggestion-icon"><svg class="btn-icon"><use href="#ic-file-text"/></svg></span>
       <span class="suggestion-label">${s}</span>
     </div>
   `).join("");
@@ -2947,6 +3079,18 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
 
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    if (typeof window.showFindReplace === "function") window.showFindReplace(false);
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "h") {
+    e.preventDefault();
+    if (typeof window.showFindReplace === "function") window.showFindReplace(true);
+    return;
+  }
+
   if ((e.ctrlKey || e.metaKey) && e.key === "s") {
     e.preventDefault();
     if (!isElectron) {
@@ -3039,16 +3183,22 @@ window.addEventListener("keydown", async (e) => {
 
 onFileSelected((filePath, result) => {
   const name = filePath.split(/[\\/]/).pop();
+  // Single-file-tab: close all other tabs before opening the new one
+  editorStore.panes.forEach(p => {
+    p.tabPaths = p.tabPaths.filter(tp => tp === filePath);
+    if (!p.tabPaths.includes(filePath)) p.activeTabPath = null;
+  });
   if (isImage(filePath)) {
     editorStore.addTab(filePath, name, "", true);
-  } else if (result.ok) {
+  } else if (result?.ok) {
     editorStore.addTab(filePath, name, result.content);
   } else {
-    editorStore.addTab(filePath, name, `Error reading file:\n${result.error}`, true);
+    editorStore.addTab(filePath, name, `Error reading file:\n${result?.error || "unknown"}`, true);
   }
   const lang = highlighter.detectLanguage(filePath);
   updateStatusBar(filePath, 1, 1, lang);
   renderEditor();
+  showFileInRightPanel(filePath, name);
 });
 
 // ── Electron bridge detection ──────────────────────────────────────────────
@@ -3424,7 +3574,7 @@ async function _runCommandInternal(commandName) {
   } catch (err) {
     appendLine("error", `[error] ${err.message}`, Date.now());
     showNotification(err.message, "error");
-    return;
+    throw err;
   }
 
   createCommand(id, commandName);
@@ -3432,78 +3582,91 @@ async function _runCommandInternal(commandName) {
   prependHistoryItem({ id, command: commandName, status: "running", startedAt: new Date().toISOString() });
   renderPanels();
 
-  let watchdog = setTimeout(() => {
-    setError(id, { code: "COMMAND_TIMEOUT", message: `Command timed out after 180s: ${commandName}`, stage: "terminal", raw: null });
-    finalizeCommand(id, "timed_out");
-    updateHistoryDot(id, "error");
-    appendLineForCommand(id, "error", `[ERROR]\nmessage: Command timed out after 180s\nsource: terminal`, Date.now());
-    notifyActionResult(false, "", `Command timed out: ${commandName}`, "terminal");
-    renderPanels();
-  }, 180000);
-
-  let streamFinalized = false;
-
-  openCommandStream(id, {
-    onStatus({ status, phase }) {
-      if (streamFinalized) return;
-      updateStatus(id, { status, phase });
-      renderPanels();
-    },
-    onStdout({ line }) {
-      if (streamFinalized) return;
-      appendStdout(id, line);
-      appendLineForCommand(id, "info", line, Date.now());
-    },
-    onStderr({ line }) {
-      if (streamFinalized) return;
-      appendStderr(id, line);
-      appendLineForCommand(id, "error", line, Date.now());
-    },
-    onResult({ result }) {
-      if (streamFinalized) return;
-      if (result) {
-        setResult(id, result);
-      }
-      renderPanels();
-    },
-    onCommandError({ error }) {
-      if (streamFinalized) return;
+  return new Promise((resolve, reject) => {
+    let watchdog = setTimeout(() => {
       streamFinalized = true;
-      clearTimeout(watchdog);
-      setError(id, error || { code: "COMMAND_ERROR", message: "Command failed", stage: "terminal", raw: null });
-      finalizeCommand(id, "error");
+      if (source) source.close();
+      setError(id, { code: "COMMAND_TIMEOUT", message: `Command timed out after 180s: ${commandName}`, stage: "terminal", raw: null });
+      finalizeCommand(id, "timed_out");
       updateHistoryDot(id, "error");
-      appendLineForCommand(id, "error", `[ERROR]\nmessage: ${(error?.message || "Command failed")}\nsource: terminal`, Date.now());
-      notifyActionResult(false, "", error?.message || `Command ${commandName} failed`, "terminal");
+      appendLineForCommand(id, "error", `[ERROR]\nmessage: Command timed out after 180s\nsource: terminal`, Date.now());
+      notifyActionResult(false, "", `Command timed out: ${commandName}`, "terminal");
       renderPanels();
-    },
-    onDone({ status }) {
-      if (streamFinalized) return;
-      streamFinalized = true;
-      finalizeCommand(id, status);
-      clearTimeout(watchdog);
-      updateHistoryDot(id, status);
-      appendLineForCommand(id, "sys", `[done] ${commandName} → ${String(status || "success").toUpperCase()}`, Date.now());
-      notifyActionResult(status === "success", `Command ${commandName} success`, `Command ${commandName} failed`, "terminal");
-      renderPanels();
-    },
-    onError(err) {
-      if (streamFinalized) return;
-      streamFinalized = true;
-      clearTimeout(watchdog);
-      setError(id, { code: "SSE_ERROR", message: err.message, stage: "bridge", raw: null });
-      addDebugCatcherItem({
-        id: `catch_${Date.now()}`,
-        source: "bridge",
-        message: err.message,
-        time: Date.now(),
-        details: null,
-      });
-      updateHistoryDot(id, "error");
-      appendLineForCommand(id, "error", `[ERROR]\nmessage: ${err.message}\nsource: terminal`, Date.now());
-      notifyActionResult(false, "", `Stream error: ${err.message}`, "terminal");
-      renderPanels();
-    },
+      reject(new Error(`Command timed out: ${commandName}`));
+    }, 180000);
+
+    let streamFinalized = false;
+
+    const source = openCommandStream(id, {
+      onStatus({ status, phase }) {
+        if (streamFinalized) return;
+        updateStatus(id, { status, phase });
+        renderPanels();
+      },
+      onStdout({ line }) {
+        if (streamFinalized) return;
+        appendStdout(id, line);
+        appendLineForCommand(id, "info", line, Date.now());
+      },
+      onStderr({ line }) {
+        if (streamFinalized) return;
+        appendStderr(id, line);
+        appendLineForCommand(id, "error", line, Date.now());
+      },
+      onResult({ result }) {
+        if (streamFinalized) return;
+        if (result) {
+          setResult(id, result);
+        }
+        renderPanels();
+      },
+      onCommandError({ error }) {
+        if (streamFinalized) return;
+        streamFinalized = true;
+        clearTimeout(watchdog);
+        setError(id, error || { code: "COMMAND_ERROR", message: "Command failed", stage: "terminal", raw: null });
+        finalizeCommand(id, "error");
+        updateHistoryDot(id, "error");
+        appendLineForCommand(id, "error", `[ERROR]\nmessage: ${(error?.message || "Command failed")}\nsource: terminal`, Date.now());
+        notifyActionResult(false, "", error?.message || `Command ${commandName} failed`, "terminal");
+        renderPanels();
+        reject(error || new Error("Command failed"));
+      },
+      onDone({ status }) {
+        if (streamFinalized) return;
+        streamFinalized = true;
+        finalizeCommand(id, status);
+        clearTimeout(watchdog);
+        updateHistoryDot(id, status);
+        appendLineForCommand(id, "sys", `[done] ${commandName} → ${String(status || "success").toUpperCase()}`, Date.now());
+        notifyActionResult(status === "success", `Command ${commandName} success`, `Command ${commandName} failed`, "terminal");
+        renderPanels();
+        if (status === "success") {
+          const cmd = store.commands.byId[id];
+          resolve(cmd?.result);
+        } else {
+          reject(new Error(`Command completed with status: ${status}`));
+        }
+      },
+      onError(err) {
+        if (streamFinalized) return;
+        streamFinalized = true;
+        clearTimeout(watchdog);
+        setError(id, { code: "SSE_ERROR", message: err.message, stage: "bridge", raw: null });
+        addDebugCatcherItem({
+          id: `catch_${Date.now()}`,
+          source: "bridge",
+          message: err.message,
+          time: Date.now(),
+          details: null,
+        });
+        updateHistoryDot(id, "error");
+        appendLineForCommand(id, "error", `[ERROR]\nmessage: ${err.message}\nsource: terminal`, Date.now());
+        notifyActionResult(false, "", `Stream error: ${err.message}`, "terminal");
+        renderPanels();
+        reject(err);
+      },
+    });
   });
 }
 

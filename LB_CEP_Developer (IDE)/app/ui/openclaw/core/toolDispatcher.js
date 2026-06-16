@@ -183,8 +183,11 @@ export const toolDispatcher = {
 
     // buildKit is fire-and-forget — results arrive via SSE stream
     buildKit: (input) => {
+      const mc = new MessageChannel();
       window.dispatchEvent(
-        new CustomEvent("run-authorized-command", { detail: input.command })
+        new CustomEvent("run-authorized-command", {
+          detail: { command: input.command, port: mc.port2 }
+        })
       );
       return { ok: true, dispatched: true, command: input.command };
     },

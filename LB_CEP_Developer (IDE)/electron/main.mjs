@@ -522,6 +522,45 @@ ipcMain.handle("delete-file", (_event, filePath) => {
   }
 });
 
+// ── Provider config ────────────────────────────────────────────────────────
+
+const PROVIDERS_FILE = path.join(projectRoot, "config", "providers.json");
+const MCP_SETTINGS_FILE = path.join(projectRoot, "config", "mcp-settings.json");
+
+ipcMain.handle("load-providers", () => {
+  try {
+    return JSON.parse(fs.readFileSync(PROVIDERS_FILE, "utf8"));
+  } catch {
+    return { version: "1.0", providers: [] };
+  }
+});
+
+ipcMain.handle("save-providers", (_event, config) => {
+  try {
+    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(config, null, 2), "utf8");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("load-mcp-settings", () => {
+  try {
+    return JSON.parse(fs.readFileSync(MCP_SETTINGS_FILE, "utf8"));
+  } catch {
+    return { version: "1.0", enabled: true, port: 3001, host: "127.0.0.1", tools: {} };
+  }
+});
+
+ipcMain.handle("save-mcp-settings", (_event, settings) => {
+  try {
+    fs.writeFileSync(MCP_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf8");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // ── Native menu ────────────────────────────────────────────────────────────
 function buildMenu(win) {
   const template = [
@@ -812,7 +851,7 @@ ipcMain.handle("git-push", async (_event, projectRoot, branchName) => {
 });
 
 ipcMain.handle("open-project-dialog", async () => {
-  const result = await dialog.showOpenDialog(win, {
+  const result = await dialog.showOpenDialog(mainWindow, {
     title: "Open Project Folder",
     properties: ["openDirectory"]
   });
@@ -850,7 +889,6 @@ function createWindow() {
       contextIsolation: true,
       sandbox: false,           // false so preload can use Node imports
       preload: path.join(__dirname, "preload.mjs"),
-      webviewTag: true,
     },
   });
 

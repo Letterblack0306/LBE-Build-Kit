@@ -39,7 +39,7 @@
   }
 
   function updateResolvedModelBadge(text, state) {
-    var badge = global.document && global.document.getElementById('model-badge');
+    var badge = global.document && global.document.getElementById('active-model-badge');
     if (!badge) return;
     badge.textContent = text || '';
     badge.setAttribute('data-state', state || 'manual');

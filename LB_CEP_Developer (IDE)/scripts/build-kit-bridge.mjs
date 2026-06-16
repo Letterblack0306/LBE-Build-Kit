@@ -3,22 +3,29 @@ import { spawn } from "node:child_process";
 import { updateCommand, pushStdout, pushStderr } from "./command-registry.mjs";
 import { emitSse } from "./sse-manager.mjs";
 
-export const buildKitRoot = path.resolve(process.cwd(), "..", "LBE Build Kit");
+export const buildKitRoot = process.env.LBE_BUILD_KIT_ROOT
+  ? path.resolve(process.env.LBE_BUILD_KIT_ROOT)
+  : path.resolve(process.cwd(), "..", "LBE Build Kit");
 const buildKitCli = path.join(buildKitRoot, "ext-build.mjs");
 
 const commandMap = {
-  "ext-build doctor": ["doctor", "--json"],
-  "ext-build check": ["check", "--json"],
-  "ext-build dev-verify": ["dev-verify", "--json"],
-  "ext-build dev": ["dev", "--dry-run", "--json"],
-  "ext-build sync": ["sync", "--dry-run", "--json"],
-  "ext-build reload": ["reload", "--changed", "index.html", "--json"],
-  "ext-build debug": ["debug", "--dry-run", "--json"],
-  "ext-build simulate": ["simulate", "--json"],
-  "ext-build bump patch": ["bump", "patch", "--json"],
-  "ext-build bump minor": ["bump", "minor", "--json"],
-  "ext-build bump major": ["bump", "major", "--json"],
-  "ext-build changelog": ["changelog", "--json"],
+  "ext-build doctor":      ["doctor",      "--json"],
+  "ext-build check":       ["check",       "--json"],
+  "ext-build dev-verify":  ["dev-verify",  "--json"],
+  "ext-build dev":         ["dev",         "--dry-run", "--json"],
+  "ext-build watch":       ["watch",       "--json"],
+  "ext-build build":       ["build",       "--json"],
+  "ext-build preflight":   ["preflight",   "--json"],
+  "ext-build hygiene":     ["hygiene",     "--json"],
+  "ext-build sign-verify": ["sign-verify", "--json"],
+  "ext-build sync":        ["sync",        "--dry-run", "--json"],
+  "ext-build reload":      ["reload",      "--changed", "index.html", "--json"],
+  "ext-build debug":       ["debug",       "--dry-run", "--json"],
+  "ext-build simulate":    ["simulate",    "--json"],
+  "ext-build bump patch":  ["bump",        "patch", "--json"],
+  "ext-build bump minor":  ["bump",        "minor", "--json"],
+  "ext-build bump major":  ["bump",        "major", "--json"],
+  "ext-build changelog":   ["changelog",   "--json"],
 };
 const COMMAND_TIMEOUT_MS = 180000;
 

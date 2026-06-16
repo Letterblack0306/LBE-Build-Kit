@@ -150,6 +150,7 @@ export function printResult(result, json) {
         checksFailed: checks.filter((c) => !c.ok).length,
         artifactCount: artifacts.length,
       },
+      pipeline: result.pipeline ?? null,
       reportPath: result.reportDir ?? null,
     };
     // Tagged line lets the IDE bridge extract JSON reliably even if future
@@ -158,21 +159,39 @@ export function printResult(result, json) {
     return;
   }
 
-  console.log(`${result.ok ? "PASS" : "FAIL"} ${result.command}`);
-  if (result.message) {
-    console.log(result.message);
+  const isTTY = process.stdout.isTTY;
+  const G = s => isTTY ? `\x1b[32m${s}\x1b[0m` : s;
+  const R = s => isTTY ? `\x1b[31m${s}\x1b[0m` : s;
+  const D = s => isTTY ? `\x1b[2m${s}\x1b[0m` : s;
+  const B = s => isTTY ? `\x1b[1m${s}\x1b[0m` : s;
+
+  // Pipeline commands (build, dev) already printed step-by-step output during
+  // execution — show only the final status + report path to avoid repeating checks.
+  if (result.pipeline) {
+    const status = result.ok ? G("PASS") : R("FAIL");
+    const ver = result.version ? ` ${D("v" + result.version)}` : "";
+    console.log(`${status} ${B(result.command)}${ver}`);
+    if (!result.ok && result.message) console.log(R(result.message));
+    if (result.reportDir) console.log(D(`Report: ${result.reportDir}`));
+    return;
   }
 
-  if (result.checks.length > 0) {
+  // Standard diagnostics display
+  const status = result.ok ? G("PASS") : R("FAIL");
+  console.log(`${status} ${B(result.command)}`);
+  if (result.message) console.log(result.message);
+
+  if ((result.checks ?? []).length > 0) {
     console.log("");
     for (const check of result.checks) {
-      console.log(`[${check.ok ? "OK " : "ERR"}] ${check.name} - ${check.message}`);
+      const icon = check.ok ? G("[OK ]") : R("[ERR]");
+      console.log(`${icon} ${check.name} - ${check.message}`);
     }
   }
 
   if (result.diff && (result.diff.added.length || result.diff.removed.length || result.diff.changed.length)) {
     console.log("");
-    console.log(`Diff summary: +${result.diff.added.length} / -${result.diff.removed.length} / ~${result.diff.changed.length}`);
+    console.log(`Diff: +${result.diff.added.length} / -${result.diff.removed.length} / ~${result.diff.changed.length}`);
   }
 
   if (result.reportDir) {
