@@ -213,6 +213,7 @@ export function runForbiddenPatternsCheck(baseDir, forbiddenPatterns, deps) {
         p === ".build-report" ||
         p === "dist" ||
         p === "release-out" ||
+        p === "release-dist" ||
         p === "temp-dist-live-smoke" ||
         p === "dev-target"
     );
