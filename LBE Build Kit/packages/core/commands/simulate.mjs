@@ -7,7 +7,7 @@ export async function runSimulate(config, deps) {
   const doctor = runDoctor(config, deps);
   const check = runCheck(config, deps);
   const es3 = await runES3Check(config, deps);
-  const verify = runVerify(config, deps);
+  const verify = await runVerify(config, deps);
 
   const ok = doctor.ok && check.ok && es3.ok && verify.ok;
   return {

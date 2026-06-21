@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+
 export function runCommandAdapter(adapterName, adapterConfig, context, deps) {
   const {
     createCheck,
@@ -25,12 +27,17 @@ export function runCommandAdapter(adapterName, adapterConfig, context, deps) {
     };
   }
 
-  const commandResult = runConfiguredCommand(adapterConfig.command, context.cwd);
+  // Get timeout from config (default: 5 minutes = 300000ms)
+  const timeoutMs = adapterConfig.timeout ?? 300000;
+
+  const commandResult = runConfiguredCommandWithTimeout(adapterConfig.command, context.cwd, timeoutMs);
   const checks = [
     createCheck(
       `adapter.${adapterName}`,
       commandResult.ok,
-      commandResult.ok ? `ran ${adapterConfig.command}` : `adapter command failed: ${adapterConfig.command}`,
+      commandResult.ok
+        ? `ran ${adapterConfig.command}`
+        : `adapter command failed: ${adapterConfig.command}${commandResult.timedOut ? " (TIMEOUT)" : ""}`,
     ),
   ];
 
@@ -67,5 +74,26 @@ export function runCommandAdapter(adapterName, adapterConfig, context, deps) {
     ok: checks.every((check) => check.ok),
     checks,
     artifacts,
+  };
+}
+
+function runConfiguredCommandWithTimeout(command, cwd, timeoutMs) {
+  const result = spawnSync(command, {
+    cwd,
+    encoding: "utf8",
+    shell: true,
+    timeout: timeoutMs,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const timedOut = result.signal === "SIGTERM" || (result.error && result.error.code === "ETIMEDOUT");
+
+  return {
+    ok: result.status === 0 && !timedOut,
+    stdout: result.stdout?.toString() ?? "",
+    stderr: result.stderr?.toString() ?? "",
+    status: result.status,
+    signal: result.signal,
+    timedOut,
   };
 }

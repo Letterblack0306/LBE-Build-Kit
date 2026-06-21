@@ -21,6 +21,7 @@ import { runPreflight as runPreflightCommand } from "./packages/core/commands/pr
 import { runHygiene as runHygieneCommand } from "./packages/core/commands/hygiene.mjs";
 import { runSignVerify as runSignVerifyCommand } from "./packages/core/commands/sign-verify.mjs";
 import { runSimulate as runSimulateCommand } from "./packages/core/commands/simulate.mjs";
+import { runRelease as runReleaseCommand } from "./packages/core/commands/release.mjs";
 import { scaffoldProject } from "./packages/core/commands/init.mjs";
 import { runBump as runBumpCommand } from "./packages/core/commands/bump.mjs";
 import { runChangelog as runChangelogCommand } from "./packages/core/commands/changelog.mjs";
@@ -195,6 +196,10 @@ async function main() {
           outputPath: args.output ?? null,
           dryRun: Boolean(args["dry-run"]),
         }, getCoreCommandDeps()),
+        release: async () => {
+          if (!process.env.CI && !args["allow-local-release"]) throw new Error("release is CI-only for now. Re-run with --allow-local-release to bypass.");
+          return await runReleaseCommand(config, { dryRun: Boolean(args["dry-run"]), publish: Boolean(args.publish), reset: Boolean(args.reset) }, getCoreCommandDeps());
+        },
       });
     }
   } catch (error) {

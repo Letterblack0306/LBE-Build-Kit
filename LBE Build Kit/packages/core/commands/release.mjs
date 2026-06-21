@@ -32,6 +32,10 @@ function relativeIfInside(baseDir, candidatePath) {
   return toPosix(relative);
 }
 
+function hasSeparateDist(config) {
+  return path.resolve(config.absolute.source) !== path.resolve(config.absolute.dist);
+}
+
 function buildReleaseNotes(config, version, git, stageArtifacts, adapterResults) {
   const lines = [
     `Project: ${config.project.name}`,
@@ -53,9 +57,15 @@ function buildReleaseNotes(config, version, git, stageArtifacts, adapterResults)
   return `${lines.join("\n")}\n`;
 }
 
-function runGitCommand(args, cwd) {
-  const res = spawnSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  return res.status === 0 ? res.stdout.trim() : null;
+function runGitCommand(args, cwd, timeoutMs = 30000) {
+  const res = spawnSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: timeoutMs });
+  if (res.signal === "SIGTERM" || (res.error && res.error.code === "ETIMEDOUT")) {
+    return { timedOut: true };
+  }
+  if (res.status !== 0) {
+    return null;
+  }
+  return res.stdout.trim();
 }
 
 function runReleaseGitChecks(config, deps, checks) {
@@ -64,11 +74,16 @@ function runReleaseGitChecks(config, deps, checks) {
   let ok = true;
 
   // 1. Detached HEAD Check
-  const branch = runGitCommand(["rev-parse", "--abbrev-ref", "HEAD"], root);
-  if (!branch) {
+  const branchResult = runGitCommand(["rev-parse", "--abbrev-ref", "HEAD"], root);
+  if (!branchResult) {
     checks.push(createCheck("release.git.detached", true, "Git not available or not inside repo; skipped"));
     return { ok: true, branch: null };
   }
+  if (typeof branchResult === "object" && branchResult.timedOut) {
+    checks.push(createCheck("release.git.detached", false, "Git branch check timed out"));
+    return { ok: false, branch: null };
+  }
+  const branch = branchResult;
 
   if (branch === "HEAD") {
     checks.push(createCheck("release.git.detached", false, "Detached HEAD state detected — cannot release"));
@@ -96,7 +111,10 @@ function runReleaseGitChecks(config, deps, checks) {
 
   // 3. Workspace Clean Check
   const status = runGitCommand(["status", "--short"], root);
-  if (status && status.length > 0) {
+  if (typeof status === "object" && status.timedOut) {
+    checks.push(createCheck("release.git.clean", false, "Git workspace status check timed out"));
+    ok = false;
+  } else if (status && status.length > 0) {
     checks.push(createCheck("release.git.clean", false, `Workspace is not clean:\n${status}`));
     ok = false;
   } else {
@@ -105,10 +123,13 @@ function runReleaseGitChecks(config, deps, checks) {
 
   // 4. Remote Sync Check
   try {
-    spawnSync("git", ["fetch", "origin", "--quiet"], { cwd: root });
+    spawnSync("git", ["fetch", "origin", "--quiet"], { cwd: root, timeout: 30000 });
   } catch (_) {}
   const syncStatus = runGitCommand(["status", "-sb"], root);
-  if (syncStatus && (syncStatus.includes("ahead") || syncStatus.includes("behind") || syncStatus.includes("diverged"))) {
+  if (typeof syncStatus === "object" && syncStatus.timedOut) {
+    checks.push(createCheck("release.git.sync", false, "Git sync status check timed out"));
+    ok = false;
+  } else if (syncStatus && (syncStatus.includes("ahead") || syncStatus.includes("behind") || syncStatus.includes("diverged"))) {
     checks.push(createCheck("release.git.sync", false, `Branch not synced with remote:\n${syncStatus}`));
     ok = false;
   } else {
@@ -119,7 +140,10 @@ function runReleaseGitChecks(config, deps, checks) {
   if (branch !== "HEAD" && isBranchAllowed) {
     const localSha = runGitCommand(["rev-parse", "HEAD"], root);
     const remoteSha = runGitCommand(["rev-parse", `origin/${branch}`], root);
-    if (localSha && remoteSha && localSha !== remoteSha) {
+    if ((typeof localSha === "object" && localSha.timedOut) || (typeof remoteSha === "object" && remoteSha.timedOut)) {
+      checks.push(createCheck("release.git.head-match", false, "Git HEAD comparison timed out"));
+      ok = false;
+    } else if (localSha && remoteSha && localSha !== remoteSha) {
       checks.push(createCheck("release.git.head-match", false, "Local HEAD does not match remote branch tip"));
       ok = false;
     } else {
@@ -130,7 +154,10 @@ function runReleaseGitChecks(config, deps, checks) {
   // 6. Dist Not Tracked Check
   const trackedDist = runGitCommand(["ls-files", "dist"], root);
   const stagedDist = runGitCommand(["diff", "--cached", "--name-only"], root) || "";
-  if ((trackedDist && trackedDist.length > 0) || stagedDist.includes("dist/")) {
+  if ((typeof trackedDist === "object" && trackedDist.timedOut) || (typeof stagedDist === "object" && stagedDist.timedOut)) {
+    checks.push(createCheck("release.git.dist-policy", false, "Git dist policy check timed out"));
+    ok = false;
+  } else if ((trackedDist && trackedDist.length > 0) || stagedDist.includes("dist/")) {
     checks.push(createCheck("release.git.dist-policy", false, "dist/ directory is tracked or staged in Git. Clean Git index."));
     ok = false;
   } else {
@@ -222,6 +249,26 @@ export async function runRelease(config, options = {}, deps) {
 
     const version = integrity.version ?? verify.version ?? check.version ?? null;
     const git = integrity.git ?? null;
+
+    if (!options.dryRun && !hasSeparateDist(config)) {
+      checks.push(
+        createCheck(
+          "release.paths.dist",
+          false,
+          `paths.dist ("${config.paths.dist}") resolves to the same directory as paths.source ("${config.paths.source}"). Use a separate output folder before producing release artifacts.`,
+        ),
+      );
+      markReleaseStep(root, "path-policy", "FAIL");
+      return {
+        ok: false,
+        message: "Release artifact staging requires paths.dist to be separate from paths.source.",
+        checks,
+        artifacts: [],
+        version,
+        git,
+      };
+    }
+    markReleaseStep(root, "path-policy", "PASS");
 
     // ── STEP 3: SOURCE CONTENT FORBIDDEN PATTERNS SCAN ────────────────────────
     const forbiddenPatterns = config.release?.forbiddenPatterns ?? [

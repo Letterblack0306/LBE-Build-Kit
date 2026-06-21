@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+// Lock TTL in minutes (default: 30 minutes)
+const LOCK_TTL_MINUTES = 30;
 
 function getPaths(projectRoot) {
   const stateDir = path.join(projectRoot, ".build-report");
@@ -42,12 +44,24 @@ export function checkReleasePrerequisites(projectRoot, steps) {
   }
 }
 
-export function isReleaseLocked(projectRoot) {
+export function isReleaseLocked(projectRoot, ttlMinutes = LOCK_TTL_MINUTES) {
   const { lockFile } = getPaths(projectRoot);
   if (!fs.existsSync(lockFile)) return false;
   try {
-    const data = JSON.parse(fs.readFileSync(lockFile, "utf8"));
-    return data.locked === true;
+    const data = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    if (data.locked !== true) return false;
+
+    // Check TTL - if lock is older than TTL, consider it expired
+    if (data.timestamp) {
+      const lockTime = new Date(data.timestamp).getTime();
+      const now = Date.now();
+      const ttlMs = ttlMinutes * 60 * 1000;
+      if (now - lockTime > ttlMs) {
+        console.log('[release-lock] Lock expired (older than ' + ttlMinutes + ' minutes), auto-releasing');
+        return false;
+      }
+    }
+    return true;
   } catch {
     return false;
   }
@@ -60,7 +74,7 @@ export function setReleaseLock(projectRoot, locked) {
   console.log(`[release-lock] Lock state set to: ${locked}`);
 }
 
-export function resetReleaseLockAndState(projectRoot) {
+export function forceReleaseLock(projectRoot) {
   const { lockFile, stateFile } = getPaths(projectRoot);
   let removed = false;
 
@@ -74,8 +88,12 @@ export function resetReleaseLockAndState(projectRoot) {
   }
 
   if (removed) {
-    console.log("[release-lock] Release lock and state files reset.");
+    console.log('[release-lock] Release lock and state files force-released (TTL expired or manual reset).');
   } else {
-    console.log("[release-lock] Release lock and state are already clean.");
+    console.log('[release-lock] Release lock and state are already clean.');
   }
+}
+
+export function resetReleaseLockAndState(projectRoot) {
+  forceReleaseLock(projectRoot);
 }
