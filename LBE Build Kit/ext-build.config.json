@@ -8,7 +8,7 @@
   },
   "paths": {
     "source": ".",
-    "dist": ".",
+    "dist": "release-dist",
     "manifest": "manifest.xml"
   },
   "versioning": {
@@ -96,17 +96,32 @@
     "buildCommand": null,
     "debugPort": 8088,
     "hostName": "AEFT",
-    "csxsVersions": ["12", "11"],
+    "csxsVersions": [
+      "12",
+      "11"
+    ],
     "browserUrl": "http://localhost:8088",
-    "syncExcludes": ["node_modules", ".git", ".build-report"],
+    "syncExcludes": [
+      "node_modules",
+      ".git",
+      ".build-report"
+    ],
     "localServer": {
       "enabled": false,
       "root": ".",
       "port": 3000
     },
     "reload": {
-      "panelPatterns": ["**/*.md", "**/*.json", "**/*.xml", "**/*.mjs"],
-      "restartPatterns": ["manifest.xml", ".debug"]
+      "panelPatterns": [
+        "**/*.md",
+        "**/*.json",
+        "**/*.xml",
+        "**/*.mjs"
+      ],
+      "restartPatterns": [
+        "manifest.xml",
+        ".debug"
+      ]
     }
   }
 }
