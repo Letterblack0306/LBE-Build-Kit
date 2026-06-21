@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { runDoctor } from "./doctor.mjs";
 import { runCheck } from "./check.mjs";
@@ -11,12 +12,37 @@ const D = s => T ? `\x1b[2m${s}\x1b[0m` : s;
 const B = s => T ? `\x1b[1m${s}\x1b[0m` : s;
 const CY = s => T ? `\x1b[36m${s}\x1b[0m` : s;
 
+const DEFAULT_BUILD_EXCLUDES = new Set([
+  ".git",
+  ".build-report",
+  ".gpt-sync",
+  ".release-verify",
+  "CI_FAILED_LOG.txt",
+  "CI_BUILD_FAILED_LOG.txt",
+  "CI_BUILD2_FAILED_LOG.txt",
+  "dev-target",
+  "node_modules",
+  "release-dist",
+  "release-out",
+  "temp-dist-live-smoke",
+]);
+
 function logStep(name, result) {
   const icon = result.ok ? G("✓") : R("✗");
   const info = (result.checks ?? []).filter(c => c.ok).map(c => c.message).join(" · ").slice(0, 72);
   console.log(`  ${icon} ${name.padEnd(10)} ${D(info)}`);
   for (const f of (result.checks ?? []).filter(c => !c.ok)) {
     console.log(`     ${R("└─")} ${f.name}: ${R(f.message)}`);
+  }
+}
+
+function runDefaultBuildCopy(sourceDir, distDir) {
+  fs.mkdirSync(distDir, { recursive: true });
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (DEFAULT_BUILD_EXCLUDES.has(entry.name)) continue;
+    const from = path.join(sourceDir, entry.name);
+    const to = path.join(distDir, entry.name);
+    fs.cpSync(from, to, { recursive: true, force: true, errorOnExist: false });
   }
 }
 
@@ -75,7 +101,7 @@ export async function runBuild(config, options = {}, deps) {
     if (!distCheck.ok) return bail(distCheck.message);
   }
 
-  // Gate 4b: build command (optional — only if project has one configured)
+  // Gate 4b: build command, or default source-to-dist staging when no project build command is configured
   if (config.dev?.buildCommand) {
     const built = options.dryRun
       ? { ok: true, stdout: "", stderr: "" }
@@ -88,6 +114,22 @@ export async function runBuild(config, options = {}, deps) {
     allChecks.push(bc);
     pipeline.push({ step: "build", ok: built.ok, message: msg });
     if (!built.ok) return bail(msg);
+  } else if (config.absolute.source && config.absolute.dist) {
+    let ok = true;
+    let msg = `staged source into dist: ${config.absolute.dist}`;
+    if (!options.dryRun) {
+      try {
+        runDefaultBuildCopy(config.absolute.source, config.absolute.dist);
+      } catch (error) {
+        ok = false;
+        msg = `failed to stage source into dist: ${error?.message ?? error}`;
+      }
+    }
+    const bc = createCheck("build.default-copy", ok, msg);
+    logStep("build", { ok, checks: [bc] });
+    allChecks.push(bc);
+    pipeline.push({ step: "build", ok, message: msg });
+    if (!ok) return bail(msg);
   }
 
   // Gate 5: verify build output
