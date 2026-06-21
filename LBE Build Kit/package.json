@@ -28,6 +28,7 @@
   ],
   "scripts": {
     "dev": "node ./ext-build.mjs dev",
+    "build": "node ./ext-build.mjs build",
     "watch": "node ./ext-build.mjs watch",
     "sync": "node ./ext-build.mjs sync",
     "reload": "node ./ext-build.mjs reload",
