@@ -51,13 +51,14 @@ export function runZxpPackage(config, options = {}, context, deps) {
     return { ok: true, checks, artifacts: [] };
   }
 
+  const zipPath = `${zxpPath}.zip`;
   const archiveCommand = [
     "powershell",
     "-NoProfile",
     "-Command",
-    `if (Test-Path '${psQuote(zxpPath)}') { Remove-Item '${psQuote(zxpPath)}' -Force }; Compress-Archive -Path '${psQuote(path.join(context.bundleDir, "*"))}' -DestinationPath '${psQuote(zxpPath)}' -Force`,
+    `if (Test-Path '${psQuote(zxpPath)}') { Remove-Item '${psQuote(zxpPath)}' -Force }; if (Test-Path '${psQuote(zipPath)}') { Remove-Item '${psQuote(zipPath)}' -Force }; Compress-Archive -Path '${psQuote(path.join(context.bundleDir, "*"))}' -DestinationPath '${psQuote(zipPath)}' -Force; Move-Item '${psQuote(zipPath)}' '${psQuote(zxpPath)}' -Force`,
   ];
-  const result = spawnSync(archiveCommand[0], archiveCommand.slice(1), { stdio: "ignore" });
+  const result = spawnSync(archiveCommand[0], archiveCommand.slice(1), { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
   const ok = result.status === 0 && fileExists(zxpPath);
   checks.push(
     createCheck(
