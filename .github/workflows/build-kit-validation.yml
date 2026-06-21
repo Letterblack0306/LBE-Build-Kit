@@ -1,0 +1,31 @@
+name: Build Kit Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Build Kit dependencies
+        working-directory: "LBE Build Kit"
+        run: npm install
+      - name: Check Build Kit
+        working-directory: "LBE Build Kit"
+        run: npm run check
+      - name: Simulate Build Kit
+        working-directory: "LBE Build Kit"
+        run: npm run simulate
+      - name: Install IDE dependencies
+        working-directory: "LB_CEP_Developer (IDE)"
+        run: npm install
+      - name: Check IDE structure
+        working-directory: "LB_CEP_Developer (IDE)"
+        run: npm run check:structure
