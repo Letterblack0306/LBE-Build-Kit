@@ -280,7 +280,7 @@ export async function runRelease(config, options = {}, deps) {
       { name: "secret-github-token", regex: "gh[pousr]_[A-Za-z0-9]{36,}", severity: "BLOCK" },
     ];
     if (runForbiddenPatternsCheck) {
-      const scanResult = runForbiddenPatternsCheck(path.join(root, "src"), forbiddenPatterns, deps);
+      const scanResult = runForbiddenPatternsCheck(config.absolute.source, forbiddenPatterns, deps);
       checks.push(...scanResult.checks);
       if (!scanResult.ok) {
         markReleaseStep(root, "content-scan", "FAIL");
