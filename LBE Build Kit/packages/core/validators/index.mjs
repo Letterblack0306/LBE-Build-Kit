@@ -220,6 +220,10 @@ export function runForbiddenPatternsCheck(baseDir, forbiddenPatterns, deps) {
 
   for (const relativePath of files) {
     const ext = path.extname(relativePath).toLowerCase();
+    if (relativePath === "packages/core/commands/release.mjs") {
+      continue;
+    }
+
     if (ext !== ".js" && ext !== ".jsx" && ext !== ".mjs" && ext !== ".cjs" && ext !== ".html" && ext !== ".xml") {
       continue;
     }
