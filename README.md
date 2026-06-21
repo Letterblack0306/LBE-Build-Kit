@@ -4,6 +4,17 @@ This repository houses a unified, production-ready environment for developing, t
 
 ---
 
+## Latest Public Release
+
+**LBE Build Kit v0.1.0** is published and verified.
+
+- GitHub Release: https://github.com/Letterblack0306/LBE-Build-Kit/releases/tag/v0.1.0
+- Release artifact: `LBE-Build-Kit-0.1.0.unsigned.zxp`
+- ZXP SHA256: `a94a83ce060908d4d29a6d8ba75a512b356bb74ba5aa435280ab3a1715a314ab`
+- Release status: validated local build, verified downloaded asset, clean `main` branch
+
+---
+
 ## Workspace Subsystems
 
 The workspace consists of two tightly integrated subsystems:
