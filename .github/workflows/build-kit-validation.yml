@@ -2,21 +2,30 @@ name: Build Kit Validation
 
 on:
   push:
-    branches: [main]
+    branches: [main, "agent/**"]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   validate:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            LBE Build Kit/package-lock.json
+            LB_CEP_Developer (IDE)/package-lock.json
+
       - name: Install Build Kit dependencies
         working-directory: "LBE Build Kit"
-        run: npm install
+        run: npm ci
       - name: Check Build Kit
         working-directory: "LBE Build Kit"
         run: npm run check
@@ -26,9 +35,19 @@ jobs:
       - name: Simulate Build Kit
         working-directory: "LBE Build Kit"
         run: npm run simulate
+
       - name: Install IDE dependencies
         working-directory: "LB_CEP_Developer (IDE)"
-        run: npm install
-      - name: Check IDE structure
+        run: npm ci
+      - name: Validate IDE contracts
         working-directory: "LB_CEP_Developer (IDE)"
-        run: npm run check:structure
+        run: npm test
+      - name: Package unpacked IDE smoke artifact
+        working-directory: "LB_CEP_Developer (IDE)"
+        run: npm run build:dir
+      - name: Verify packaged executable exists
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "LB_CEP_Developer (IDE)/dist" -Filter "LetterBlack CEP IDE.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "Packaged IDE executable not found" }
+          Write-Host "Packaged executable: $($exe.FullName)"
