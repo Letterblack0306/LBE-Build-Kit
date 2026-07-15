@@ -1,881 +1,318 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell, safeStorage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// In production (packaged), __dirname is inside resources/app.asar/electron/
-// We need to point projectRoot to where the app content lives.
-const projectRoot = app.isPackaged
-  ? path.join(process.resourcesPath, "app")
-  : path.resolve(__dirname, "..");
-
-app.disableHardwareAcceleration();
-// userData should be in a standard system location in production
-const userDataPath = app.isPackaged
-  ? path.join(app.getPath("userData"), "local-data")
-  : path.join(projectRoot, ".electron-data");
-
+const sourceRoot = path.resolve(__dirname, "..");
+const runtimeRoot = app.isPackaged
+  ? path.join(process.resourcesPath, "ide-runtime")
+  : sourceRoot;
+const userDataPath = path.join(app.getPath("userData"), "local-data");
 app.setPath("userData", userDataPath);
+app.disableHardwareAcceleration();
+app.requestSingleInstanceLock() || app.quit();
 
+const SETTINGS_FILE = path.join(userDataPath, "ai-settings.json");
+const PROVIDERS_FILE = path.join(userDataPath, "providers.json");
+const MCP_SETTINGS_FILE = path.join(userDataPath, "mcp-settings.json");
+const SESSION_TOKEN = crypto.randomBytes(32).toString("hex");
+const authorizedRoots = new Set();
 let mainWindow = null;
 let serverProcess = null;
 
-const SETTINGS_FILE = path.join(app.getPath("userData"), "ai-settings.json");
+function normalizeRoot(input) {
+  if (!input || typeof input !== "string") throw new Error("Missing workspace path");
+  const resolved = path.resolve(input);
+  const real = fs.existsSync(resolved) ? fs.realpathSync.native(resolved) : resolved;
+  const stat = fs.existsSync(real) ? fs.statSync(real) : null;
+  if (stat && !stat.isDirectory()) throw new Error("Workspace must be a directory");
+  return real;
+}
+
+function registerWorkspace(input) {
+  const root = normalizeRoot(input);
+  authorizedRoots.add(root);
+  return root;
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function authorizePath(input, { mustExist = false } = {}) {
+  if (!input || typeof input !== "string") throw new Error("Missing path");
+  const resolved = path.resolve(input);
+  let candidate = resolved;
+  if (fs.existsSync(resolved)) {
+    candidate = fs.realpathSync.native(resolved);
+  } else {
+    const parent = path.dirname(resolved);
+    if (fs.existsSync(parent)) {
+      candidate = path.join(fs.realpathSync.native(parent), path.basename(resolved));
+    }
+  }
+  if (mustExist && !fs.existsSync(candidate)) throw new Error("Path does not exist");
+  for (const root of authorizedRoots) {
+    if (isWithin(root, candidate)) return candidate;
+  }
+  const err = new Error("Path is outside an authorized workspace");
+  err.code = "WORKSPACE_SCOPE_BLOCKED";
+  throw err;
+}
+
+function authorizeRoot(input) {
+  const root = normalizeRoot(input);
+  if (!authorizedRoots.has(root)) {
+    const err = new Error("Workspace is not authorized");
+    err.code = "WORKSPACE_NOT_AUTHORIZED";
+    throw err;
+  }
+  return root;
+}
+
+function safeResult(fn, fallback = null) {
+  try { return fn(); } catch (error) { return { ok: false, error: error.message, code: error.code || "OPERATION_FAILED", fallback }; }
+}
 
 function encryptValue(value) {
   if (!value) return "";
-  if (!safeStorage.isEncryptionAvailable()) return value;
-  const buf = safeStorage.encryptString(value);
-  return `enc:${buf.toString("base64")}`;
+  if (!safeStorage.isEncryptionAvailable()) {
+    const err = new Error("Secure operating-system storage is unavailable; secrets were not persisted");
+    err.code = "SECURE_STORAGE_UNAVAILABLE";
+    throw err;
+  }
+  return `enc:${safeStorage.encryptString(value).toString("base64")}`;
 }
 
 function decryptValue(value) {
   if (!value) return "";
-  if (value.startsWith("enc:")) {
-    const raw = value.slice(4);
-    try {
-      const buf = Buffer.from(raw, "base64");
-      return safeStorage.decryptString(buf);
-    } catch {
-      return "";
-    }
-  }
-  return value;
+  if (!String(value).startsWith("enc:")) return "";
+  if (!safeStorage.isEncryptionAvailable()) return "";
+  try { return safeStorage.decryptString(Buffer.from(String(value).slice(4), "base64")); } catch { return ""; }
+}
+
+function readJson(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; }
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
 function readSettingsFile() {
-  try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return { config: {}, profiles: [] };
-    const config = parsed.config || {};
-    if (config.apiKey) config.apiKey = decryptValue(config.apiKey);
-    const profiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
-    profiles.forEach((p) => {
-      if (p.apiKey) p.apiKey = decryptValue(p.apiKey);
-    });
-    return { config, profiles };
-  } catch {
-    return { config: {}, profiles: [] };
-  }
+  const parsed = readJson(SETTINGS_FILE, { config: {}, profiles: [] });
+  const config = { ...(parsed.config || {}) };
+  if (config.apiKey) config.apiKey = decryptValue(config.apiKey);
+  const profiles = Array.isArray(parsed.profiles) ? parsed.profiles.map((profile) => {
+    const next = { ...profile };
+    if (next.apiKey) next.apiKey = decryptValue(next.apiKey);
+    return next;
+  }) : [];
+  return { config, profiles, encryptionAvailable: safeStorage.isEncryptionAvailable() };
 }
 
 function writeSettingsFile(payload) {
-  const safeConfig = { ...(payload?.config || {}) };
-  if (safeConfig.apiKey) safeConfig.apiKey = encryptValue(safeConfig.apiKey);
-  const safeProfiles = Array.isArray(payload?.profiles) ? payload.profiles.map((p) => {
-    const next = { ...p };
-    if (next.apiKey) next.apiKey = encryptValue(next.apiKey);
-    return next;
-  }) : [];
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ config: safeConfig, profiles: safeProfiles }, null, 2), "utf8");
-  return { ok: true, encrypted: safeStorage.isEncryptionAvailable() };
+  try {
+    const config = { ...(payload?.config || {}) };
+    if (config.apiKey) config.apiKey = encryptValue(config.apiKey);
+    const profiles = Array.isArray(payload?.profiles) ? payload.profiles.map((profile) => {
+      const next = { ...profile };
+      if (next.apiKey) next.apiKey = encryptValue(next.apiKey);
+      return next;
+    }) : [];
+    writeJson(SETTINGS_FILE, { config, profiles });
+    return { ok: true, encrypted: true };
+  } catch (error) {
+    return { ok: false, encrypted: false, code: error.code || "SETTINGS_SAVE_FAILED", error: error.message };
+  }
 }
 
-// ── Dev server ─────────────────────────────────────────────────────────────
 function startServer() {
-  const serverScript = path.join(projectRoot, "scripts", "dev-server.mjs");
-
-  // Use node if available, otherwise fallback to electron (which can run node scripts)
-  const execPath = app.isPackaged ? process.execPath : "node";
-
-  console.log(`[electron] Starting server at: ${serverScript}`);
-
-  serverProcess = spawn(execPath, [serverScript], {
-    cwd: projectRoot,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: "pipe", // Capture logs for debugging
+  const script = path.join(runtimeRoot, "scripts", "dev-server.mjs");
+  const executable = app.isPackaged ? process.execPath : "node";
+  serverProcess = spawn(executable, [script], {
+    cwd: runtimeRoot,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", LBE_IDE_SESSION_TOKEN: SESSION_TOKEN },
+    stdio: "pipe"
   });
-
   serverProcess.stdout.on("data", (data) => console.log(`[server] ${data}`));
-  serverProcess.stderr.on("data", (data) => console.error(`[server-err] ${data}`));
+  serverProcess.stderr.on("data", (data) => console.error(`[server] ${data}`));
+  serverProcess.on("error", (error) => dialog.showErrorBox("Server Error", error.message));
+}
 
-  serverProcess.on("error", (err) => {
-    console.error("[electron] server failed to start:", err.message);
-    dialog.showErrorBox("Server Error", `Failed to start local background server: ${err.message}`);
+function runGit(projectRoot, args) {
+  const root = authorizeRoot(projectRoot);
+  return new Promise((resolve) => {
+    const child = spawn("git", args, { cwd: root, shell: false, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (data) => { stdout += data.toString(); });
+    child.stderr.on("data", (data) => { stderr += data.toString(); });
+    child.on("error", (error) => resolve({ ok: false, code: -1, stdout, stderr: error.message }));
+    child.on("close", (code) => resolve({ ok: code === 0, code, stdout, stderr }));
   });
 }
 
-// ── IPC handlers ───────────────────────────────────────────────────────────
-ipcMain.handle("read-dir", (_event, dirPath) => {
+function audit(projectRoot, eventType, txnId, files, payload = {}) {
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    return entries
-      .map((e) => ({
-        name: e.name,
-        path: path.join(dirPath, e.name),
-        isDir: e.isDirectory(),
-      }))
-      .sort((a, b) => {
-        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle("read-file", (_event, filePath) => {
-  try {
-    const content = fs.readFileSync(filePath, "utf8");
-    return { ok: true, content };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("write-file", (_event, filePath, content) => {
-  try {
-    fs.writeFileSync(filePath, content, "utf8");
-    return true;
-  } catch (err) {
-    console.error("[electron] write error:", err.message);
-    return false;
-  }
-});
-
-// ── Write Transaction ───────────────────────────────────────────────────────
-// Helpers
-
-function _txnId() {
-  return `txn_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
-}
-
-function _eventId() {
-  return `evt_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
-}
-
-function _txnHash(str) {
-  return crypto.createHash("sha256").update(str || "", "utf8").digest("hex");
-}
-
-function _txnBackupPath(txnDir, relativePath) {
-  return path.join(txnDir, "backup", ...relativePath.split("/"));
-}
-
-function _txnAudit(projectRoot, eventType, txnId, ctx, files, extraPayload = {}) {
-  try {
-    const dir = path.join(projectRoot, ".letterblack", "audit");
-    fs.mkdirSync(dir, { recursive: true });
-
-    let status = "pending";
-    if (eventType === "txn.validation_passed") status = "validated";
-    if (eventType === "txn.stage_completed") status = "staged";
-    if (eventType === "txn.commit_completed") status = "committed";
-    if (eventType === "txn.rollback_completed") status = "rolled_back";
-    if (eventType === "txn.failed") status = "failed";
-    if (eventType === "txn.recovery_detected") status = "interrupted";
-
+    const root = authorizeRoot(projectRoot);
+    const directory = path.join(root, ".letterblack", "audit");
+    fs.mkdirSync(directory, { recursive: true });
     const entry = {
-      eventId: _eventId(),
-      eventType: eventType,
+      eventId: `evt_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      eventType,
       timestamp: Date.now(),
-      txnId: txnId,
-      sessionId: ctx.sessionId || null,
-      source: ctx.source || "chat",
-      actor: ctx.actor || { type: "ai" },
-      projectRoot: projectRoot,
-      summary: {
-        fileCount: files ? files.length : 0,
-        status: status
-      },
-      payload: extraPayload
+      txnId,
+      projectRoot: root,
+      summary: { fileCount: files?.length || 0 },
+      payload
     };
-
-    fs.appendFileSync(
-      path.join(dir, "audit-log.ndjson"),
-      JSON.stringify(entry) + "\n",
-      "utf8"
-    );
-  } catch { /* audit must never crash the main process */ }
+    fs.appendFileSync(path.join(directory, "audit-log.ndjson"), `${JSON.stringify(entry)}\n`, "utf8");
+  } catch { }
 }
 
-ipcMain.handle("execute-write-transaction", (_event, txn) => {
-  const { projectRoot, files, actor, source, sessionId } = txn;
-  const ctx = { actor, source, sessionId };
-  const txnId = _txnId();
-  const txnDir = path.join(projectRoot, ".letterblack", "transactions", txnId);
-  const resolvedRoot = path.resolve(projectRoot);
-  const committed = [];
-
-  // ── Validate: all paths must stay inside projectRoot ─────────────────────
-  const conflicts = [];
-  const seen = new Set();
-
-  for (const file of files) {
-    if (seen.has(file.relativePath)) conflicts.push(file.relativePath);
-    seen.add(file.relativePath);
-
-    const absPath = path.resolve(projectRoot, ...file.relativePath.split("/"));
-    if (!absPath.startsWith(resolvedRoot + path.sep) && absPath !== resolvedRoot) {
-      const err = { code: "PATH_TRAVERSAL_BLOCKED", message: `Blocked: ${file.relativePath}` };
-      _txnAudit(projectRoot, "txn.failed", txnId, ctx, files, { error: err });
-      return { ok: false, txnId, error: err };
-    }
-    file.absolutePath = absPath;
-  }
-
-  if (conflicts.length > 0) {
-    const err = { code: "DUPLICATE_TARGET_PATH", message: "Duplicate file paths in batch", conflicts };
-    _txnAudit(projectRoot, "txn.failed", txnId, ctx, files, { error: err });
-    return { ok: false, txnId, error: err };
-  }
-
-  // ── Audit: intent and validation ──────────────────────────────────────────
-  _txnAudit(projectRoot, "txn.intent", txnId, ctx, files, {
-    files: files.map(f => ({ path: f.relativePath, op: f.operation || "write" }))
-  });
-
-  _txnAudit(projectRoot, "txn.validation_passed", txnId, ctx, files, {
-    validation: { projectOpen: true, sandbox: true, conflicts: [] }
-  });
-
-  // ── Stage: snapshot existing files into backup folder ─────────────────────
-  try {
-    fs.mkdirSync(txnDir, { recursive: true });
-    for (const file of files) {
-      if (fs.existsSync(file.absolutePath)) {
-        file.originalContent = fs.readFileSync(file.absolutePath, "utf8");
-        file.originalHash = _txnHash(file.originalContent);
-        file.originalExists = true;
-        const bkPath = _txnBackupPath(txnDir, file.relativePath);
-        fs.mkdirSync(path.dirname(bkPath), { recursive: true });
-        fs.writeFileSync(bkPath, file.originalContent, "utf8");
-      } else {
-        file.originalExists = false;
-        file.originalContent = null;
-        file.originalHash = null;
-      }
-      file.proposedHash = _txnHash(file.proposedContent);
-      file.status = "staged";
-    }
-    _txnAudit(projectRoot, "txn.stage_completed", txnId, ctx, files, {
-      files: files.map(f => ({ relativePath: f.relativePath, originalExists: f.originalExists, status: f.status }))
-    });
-  } catch (err) {
-    const e = { code: "STAGE_FAILED", message: err.message };
-    _txnAudit(projectRoot, "txn.failed", txnId, ctx, files, { error: e });
-    return { ok: false, txnId, error: e };
-  }
-
-  // ── Commit: write all files ───────────────────────────────────────────────
-  try {
-    for (const file of files) {
-      fs.mkdirSync(path.dirname(file.absolutePath), { recursive: true });
-      fs.writeFileSync(file.absolutePath, file.proposedContent, "utf8");
-      file.status = "committed";
-      committed.push(file.relativePath);
-    }
-  } catch (commitErr) {
-    // Rollback committed writes in reverse order
-    const rollback = { performed: true, restoredFiles: [], failedRestores: [] };
-    for (const rp of committed.slice().reverse()) {
-      const file = files.find(f => f.relativePath === rp);
-      try {
-        if (file.originalExists) {
-          const bkPath = _txnBackupPath(txnDir, rp);
-          fs.writeFileSync(file.absolutePath, fs.readFileSync(bkPath, "utf8"), "utf8");
-        } else if (fs.existsSync(file.absolutePath)) {
-          fs.unlinkSync(file.absolutePath);
+function installIpcHandlers() {
+  ipcMain.handle("workspace-register", (_event, root) => safeResult(() => ({ ok: true, root: registerWorkspace(root) })));
+  ipcMain.handle("read-dir", (_event, input) => safeResult(() => fs.readdirSync(authorizePath(input, { mustExist: true }), { withFileTypes: true }).map((entry) => ({ name: entry.name, path: path.join(input, entry.name), isDir: entry.isDirectory() })).sort((a, b) => a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1), []));
+  ipcMain.handle("read-file", (_event, input) => safeResult(() => ({ ok: true, content: fs.readFileSync(authorizePath(input, { mustExist: true }), "utf8") })));
+  ipcMain.handle("write-file", () => ({ ok: false, code: "DIRECT_WRITE_DISABLED", error: "Use executeWriteTransaction" }));
+  ipcMain.handle("create-file", () => ({ ok: false, code: "DIRECT_WRITE_DISABLED", error: "Use executeWriteTransaction" }));
+  ipcMain.handle("create-folder", () => ({ ok: false, code: "DIRECT_WRITE_DISABLED", error: "Use executeWriteTransaction" }));
+  ipcMain.handle("rename-file", () => ({ ok: false, code: "DIRECT_WRITE_DISABLED", error: "Use executeWriteTransaction" }));
+  ipcMain.handle("delete-file", () => ({ ok: false, code: "DIRECT_WRITE_DISABLED", error: "Use executeWriteTransaction" }));
+  ipcMain.handle("reveal-in-folder", (_event, input) => safeResult(() => { shell.showItemInFolder(authorizePath(input, { mustExist: true })); return { ok: true }; }));
+  ipcMain.handle("search-files", (_event, rootInput, query, options = {}) => safeResult(() => {
+    const root = authorizeRoot(rootInput);
+    const results = [];
+    const expression = options.isRegex ? new RegExp(String(query), options.matchCase ? "g" : "gi") : null;
+    const needle = options.matchCase ? String(query) : String(query).toLowerCase();
+    const walk = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isSymbolicLink?.()) continue;
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (!["node_modules", ".git", "dist", ".letterblack"].includes(entry.name)) walk(full);
+          continue;
         }
-        file.status = "rolled_back";
-        rollback.restoredFiles.push(rp);
-      } catch (restoreErr) {
-        rollback.failedRestores.push({ path: rp, error: restoreErr.message });
-      }
-    }
-    const err = { code: "COMMIT_FAILED", message: commitErr.message };
-    _txnAudit(projectRoot, "txn.rollback_completed", txnId, ctx, files, { rollback });
-    _txnAudit(projectRoot, "txn.failed", txnId, ctx, files, { error: err });
-    return { ok: false, txnId, rollback, error: err };
-  }
-
-  // ── Write manifest ────────────────────────────────────────────────────────
-  try {
-    fs.writeFileSync(
-      path.join(txnDir, "manifest.json"),
-      JSON.stringify({
-        txnId, status: "committed", ts: Date.now(),
-        files: files.map(f => ({
-          relativePath: f.relativePath,
-          operation: f.operation || "write",
-          originalExists: f.originalExists,
-          originalHash: f.originalHash,
-          proposedHash: f.proposedHash,
-        })),
-      }, null, 2),
-      "utf8"
-    );
-  } catch { /* non-fatal */ }
-
-  // ── Audit: committed ──────────────────────────────────────────────────────
-  _txnAudit(projectRoot, "txn.commit_completed", txnId, ctx, files, { committedFiles: committed });
-
-  // Return lean result — strip proposedContent from response
-  return {
-    ok: true, txnId,
-    files: files.map(f => ({
-      relativePath: f.relativePath,
-      absolutePath: f.absolutePath,
-      status: f.status,
-      originalExists: f.originalExists,
-    })),
-  };
-});
-
-ipcMain.handle("recover-transactions", (_event, projectRoot) => {
-  try {
-    const txRoot = path.join(projectRoot, ".letterblack", "transactions");
-    if (!fs.existsSync(txRoot)) return [];
-    const folders = fs.readdirSync(txRoot);
-    const recovered = [];
-
-    for (const folder of folders) {
-      const manifestPath = path.join(txRoot, folder, "manifest.json");
-      if (fs.existsSync(manifestPath)) {
         try {
-          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-          if (manifest.status === "pending" || manifest.status === "validated" || manifest.status === "staging") {
-            manifest.status = "interrupted";
-            fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
-
-            _txnAudit(projectRoot, "txn.recovery_detected", manifest.txnId, {}, manifest.files || [], { previousStatus: manifest.status });
-            recovered.push(manifest.txnId);
-          }
+          const content = fs.readFileSync(full, "utf8");
+          const matched = expression ? expression.test(content) : (options.matchCase ? content : content.toLowerCase()).includes(needle);
+          if (matched) results.push({ path: full, name: entry.name });
         } catch { }
       }
-    }
-    return recovered;
-  } catch (err) {
-    return [];
-  }
-});
-
-ipcMain.handle("read-audit-log", (_event, projectRoot) => {
-  try {
-    const logPath = path.join(projectRoot, ".letterblack", "audit", "audit-log.ndjson");
-    if (!fs.existsSync(logPath)) return [];
-    const lines = fs.readFileSync(logPath, "utf8").split("\n").filter(Boolean);
-    return lines.map(l => {
-      try { return JSON.parse(l); } catch { return null; }
-    }).filter(Boolean);
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle("append-audit-log", (_event, projectRoot, entry) => {
-  if (!projectRoot || !entry) return { ok: false, error: "Missing audit entry" };
-  try {
-    const dir = path.join(projectRoot, ".letterblack", "audit");
-    fs.mkdirSync(dir, { recursive: true });
-    const auditEntry = {
-      eventId: `evt_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
-      timestamp: Date.now(),
-      projectRoot,
-      ...entry,
     };
-    fs.appendFileSync(
-      path.join(dir, "audit-log.ndjson"),
-      JSON.stringify(auditEntry) + "\n",
-      "utf8"
-    );
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
+    walk(root);
+    return results.slice(0, 500);
+  }, []));
 
-ipcMain.handle("append-memory-log", (_event, projectRoot, entry) => {
-  try {
-    const dir = path.join(projectRoot, ".letterblack", "memory");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(
-      path.join(dir, "memory.ndjson"),
-      JSON.stringify({ ...entry, timestamp: Date.now() }) + "\n",
-      "utf8"
-    );
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("read-memory-log", (_event, projectRoot) => {
-  try {
-    const logPath = path.join(projectRoot, ".letterblack", "memory", "memory.ndjson");
-    if (!fs.existsSync(logPath)) return [];
-    const lines = fs.readFileSync(logPath, "utf8").split("\n").filter(Boolean);
-    return lines.map(l => {
-      try { return JSON.parse(l); } catch { return null; }
-    }).filter(Boolean);
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle("search-files", (_event, rootPath, query, options = {}) => {
-  const results = [];
-  const { isRegex, matchCase } = options;
-
-  function walk(dir) {
-    const files = fs.readdirSync(dir, { withFileTypes: true });
-    for (const file of files) {
-      const fullPath = path.join(dir, file.name);
-      if (file.isDirectory()) {
-        if (["node_modules", ".git", "dist"].includes(file.name)) continue;
-        walk(fullPath);
-      } else {
-        try {
-          const content = fs.readFileSync(fullPath, "utf8");
-          let match = false;
-          if (isRegex) {
-            const re = new RegExp(query, matchCase ? "g" : "gi");
-            match = re.test(content);
-          } else {
-            const q = matchCase ? query : query.toLowerCase();
-            const c = matchCase ? content : content.toLowerCase();
-            match = c.includes(q);
-          }
-
-          if (match) {
-            const lines = content.split("\n");
-            lines.forEach((line, i) => {
-              if (line.toLowerCase().includes(query.toLowerCase())) {
-                results.push({
-                  path: fullPath,
-                  name: file.name,
-                  line: i + 1,
-                  text: line.trim()
-                });
-              }
-            });
-          }
-        } catch { }
+  ipcMain.handle("execute-write-transaction", (_event, txn) => safeResult(() => {
+    const projectRoot = authorizeRoot(txn?.projectRoot);
+    const files = Array.isArray(txn?.files) ? txn.files : [];
+    if (!files.length) throw new Error("Transaction contains no files");
+    const txnId = `txn_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    const txnDir = path.join(projectRoot, ".letterblack", "transactions", txnId);
+    const seen = new Set();
+    const staged = files.map((file) => {
+      const relativePath = String(file.relativePath || "").replace(/\\/g, "/");
+      if (!relativePath || relativePath.startsWith("/") || relativePath.includes("../")) throw new Error(`Invalid relative path: ${relativePath}`);
+      if (seen.has(relativePath)) throw new Error(`Duplicate target: ${relativePath}`);
+      seen.add(relativePath);
+      const absolutePath = authorizePath(path.join(projectRoot, relativePath));
+      return { ...file, relativePath, absolutePath, originalExists: fs.existsSync(absolutePath) };
+    });
+    fs.mkdirSync(path.join(txnDir, "backup"), { recursive: true });
+    audit(projectRoot, "txn.intent", txnId, staged, { files: staged.map((file) => file.relativePath) });
+    for (const file of staged) {
+      if (file.originalExists) {
+        const backup = path.join(txnDir, "backup", file.relativePath);
+        fs.mkdirSync(path.dirname(backup), { recursive: true });
+        fs.copyFileSync(file.absolutePath, backup);
       }
     }
-  }
-
-  try {
-    walk(rootPath);
-  } catch (err) {
-    console.error("[electron] search error:", err.message);
-  }
-  return results;
-});
-
-ipcMain.handle("reveal-in-folder", (_event, filePath) => {
-  try {
-    shell.showItemInFolder(filePath);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("create-file", (_event, filePath, content = "") => {
-  try {
-    if (fs.existsSync(filePath)) return { ok: false, error: "File already exists" };
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, content, "utf8");
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("create-folder", (_event, folderPath) => {
-  try {
-    if (fs.existsSync(folderPath)) return { ok: false, error: "Folder already exists" };
-    fs.mkdirSync(folderPath, { recursive: true });
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("rename-file", (_event, oldPath, newPath) => {
-  try {
-    fs.renameSync(oldPath, newPath);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("delete-file", (_event, filePath) => {
-  try {
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      fs.rmSync(filePath, { recursive: true });
-    } else {
-      fs.unlinkSync(filePath);
+    const committed = [];
+    try {
+      for (const file of staged) {
+        fs.mkdirSync(path.dirname(file.absolutePath), { recursive: true });
+        if (file.operation === "delete") fs.rmSync(file.absolutePath, { recursive: true, force: true });
+        else fs.writeFileSync(file.absolutePath, String(file.proposedContent ?? ""), "utf8");
+        committed.push(file);
+      }
+    } catch (error) {
+      for (const file of committed.reverse()) {
+        const backup = path.join(txnDir, "backup", file.relativePath);
+        if (file.originalExists && fs.existsSync(backup)) fs.copyFileSync(backup, file.absolutePath);
+        else fs.rmSync(file.absolutePath, { recursive: true, force: true });
+      }
+      audit(projectRoot, "txn.failed", txnId, staged, { error: error.message });
+      throw error;
     }
+    const manifest = { txnId, status: "committed", timestamp: Date.now(), files: staged.map((file) => ({ relativePath: file.relativePath, operation: file.operation || "write" })) };
+    writeJson(path.join(txnDir, "manifest.json"), manifest);
+    audit(projectRoot, "txn.commit_completed", txnId, staged, manifest);
+    return { ok: true, txnId, files: staged.map((file) => ({ relativePath: file.relativePath, status: "committed" })) };
+  }));
+
+  ipcMain.handle("recover-transactions", (_event, rootInput) => safeResult(() => {
+    const root = authorizeRoot(rootInput);
+    const txRoot = path.join(root, ".letterblack", "transactions");
+    if (!fs.existsSync(txRoot)) return [];
+    return fs.readdirSync(txRoot).filter((folder) => !fs.existsSync(path.join(txRoot, folder, "manifest.json")));
+  }, []));
+  ipcMain.handle("read-audit-log", (_event, rootInput) => safeResult(() => {
+    const file = path.join(authorizeRoot(rootInput), ".letterblack", "audit", "audit-log.ndjson");
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  }, []));
+  ipcMain.handle("append-audit-log", () => ({ ok: false, code: "AUDIT_MAIN_PROCESS_OWNED", error: "Renderer-authored audit events are disabled" }));
+  ipcMain.handle("append-memory-log", (_event, rootInput, entry) => safeResult(() => {
+    const root = authorizeRoot(rootInput);
+    const directory = path.join(root, ".letterblack", "memory");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.appendFileSync(path.join(directory, "memory.ndjson"), `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`, "utf8");
     return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
+  }));
+  ipcMain.handle("read-memory-log", (_event, rootInput) => safeResult(() => {
+    const file = path.join(authorizeRoot(rootInput), ".letterblack", "memory", "memory.ndjson");
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  }, []));
 
-// ── Provider config ────────────────────────────────────────────────────────
+  ipcMain.handle("load-providers", () => readJson(PROVIDERS_FILE, { version: "1.0", providers: [] }));
+  ipcMain.handle("save-providers", (_event, config) => safeResult(() => { writeJson(PROVIDERS_FILE, config); return { ok: true }; }));
+  ipcMain.handle("load-mcp-settings", () => readJson(MCP_SETTINGS_FILE, { version: "1.0", enabled: true, port: 3001, host: "127.0.0.1", tools: {} }));
+  ipcMain.handle("save-mcp-settings", (_event, config) => safeResult(() => { writeJson(MCP_SETTINGS_FILE, config); return { ok: true }; }));
+  ipcMain.handle("settings-load", () => readSettingsFile());
+  ipcMain.handle("settings-save", (_event, payload) => writeSettingsFile(payload));
+  ipcMain.handle("settings-reveal", () => safeResult(() => { if (!fs.existsSync(SETTINGS_FILE)) writeJson(SETTINGS_FILE, { config: {}, profiles: [] }); shell.showItemInFolder(SETTINGS_FILE); return { ok: true, path: SETTINGS_FILE }; }));
 
-const PROVIDERS_FILE = path.join(projectRoot, "config", "providers.json");
-const MCP_SETTINGS_FILE = path.join(projectRoot, "config", "mcp-settings.json");
+  ipcMain.handle("open-project-dialog", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { title: "Open Project Folder", properties: ["openDirectory"] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return registerWorkspace(result.filePaths[0]);
+  });
+  ipcMain.handle("check-dependencies", async () => ({ buildKit: { ok: fs.existsSync(path.join(runtimeRoot, "LBE Build Kit", "ext-build.mjs")), path: path.join(runtimeRoot, "LBE Build Kit") }, adobeDebug: { ok: true, status: app.isPackaged ? "production" : "development" } }));
 
-ipcMain.handle("load-providers", () => {
-  try {
-    return JSON.parse(fs.readFileSync(PROVIDERS_FILE, "utf8"));
-  } catch {
-    return { version: "1.0", providers: [] };
-  }
-});
+  ipcMain.handle("git-status", async (_event, root) => { const result = await runGit(root, ["status", "--porcelain"]); return result.ok ? { ok: true, dirty: Boolean(result.stdout.trim()), changes: result.stdout.trim().split("\n").filter(Boolean) } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-branch", async (_event, root) => { const result = await runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"]); return result.ok ? { ok: true, branch: result.stdout.trim() } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-log", async (_event, root) => { const result = await runGit(root, ["log", "-1", "--pretty=format:%h|%an|%ad|%s"]); return result.ok ? { ok: true, raw: result.stdout.trim() } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-create-branch", async (_event, root, name) => { if (!/^[A-Za-z0-9._/-]+$/.test(String(name || ""))) return { ok: false, error: "Invalid branch name" }; const result = await runGit(root, ["checkout", "-b", String(name)]); return result.ok ? { ok: true, branch: name } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-stage-files", async (_event, root, files) => { const safeFiles = (Array.isArray(files) ? files : []).map((file) => path.relative(authorizeRoot(root), authorizePath(path.join(authorizeRoot(root), file)))); const result = await runGit(root, ["add", "--", ...safeFiles]); return result.ok ? { ok: true } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-commit", async (_event, root, message) => { const result = await runGit(root, ["commit", "-m", String(message || "").trim()]); return result.ok ? { ok: true, output: result.stdout.trim() } : { ok: false, error: result.stderr }; });
+  ipcMain.handle("git-push", async (_event, root, branch) => { if (!/^[A-Za-z0-9._/-]+$/.test(String(branch || ""))) return { ok: false, error: "Invalid branch name" }; const result = await runGit(root, ["push", "-u", "origin", String(branch)]); return result.ok ? { ok: true, output: result.stdout.trim() || result.stderr.trim() } : { ok: false, error: result.stderr }; });
+}
 
-ipcMain.handle("save-providers", (_event, config) => {
-  try {
-    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(config, null, 2), "utf8");
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("load-mcp-settings", () => {
-  try {
-    return JSON.parse(fs.readFileSync(MCP_SETTINGS_FILE, "utf8"));
-  } catch {
-    return { version: "1.0", enabled: true, port: 3001, host: "127.0.0.1", tools: {} };
-  }
-});
-
-ipcMain.handle("save-mcp-settings", (_event, settings) => {
-  try {
-    fs.writeFileSync(MCP_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf8");
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-// ── Native menu ────────────────────────────────────────────────────────────
-function buildMenu(win) {
-  const template = [
-    {
-      label: "File",
-      submenu: [
-        {
-          label: "Open Project…",
-          accelerator: "CmdOrCtrl+O",
-          async click() {
-            const result = await dialog.showOpenDialog(win, {
-              title: "Open Project",
-              properties: ["openDirectory"],
-            });
-            if (!result.canceled && result.filePaths[0]) {
-              win.webContents.send("project-opened", result.filePaths[0]);
-            }
-          },
-        },
-        {
-          label: "Open File…",
-          accelerator: "CmdOrCtrl+Shift+O",
-          async click() {
-            const result = await dialog.showOpenDialog(win, {
-              title: "Open File",
-              properties: ["openFile"],
-            });
-            if (!result.canceled && result.filePaths[0]) {
-              win.webContents.send("file-opened", result.filePaths[0]);
-            }
-          },
-        },
-        { type: "separator" },
-        { label: "Quit", accelerator: "CmdOrCtrl+Q", click: () => app.quit() },
-      ],
-    },
-    {
-      label: "View",
-      submenu: [
-        {
-          label: "Reload",
-          accelerator: "CmdOrCtrl+R",
-          click: () => win.reload(),
-        },
-        {
-          label: "Toggle DevTools",
-          accelerator: "F12",
-          click: () => win.webContents.toggleDevTools(),
-        },
-        { type: "separator" },
-        {
-          label: "Zoom In",
-          accelerator: "CmdOrCtrl+=",
-          click: () => win.webContents.setZoomLevel(win.webContents.getZoomLevel() + 1),
-        },
-        {
-          label: "Zoom Out",
-          accelerator: "CmdOrCtrl+-",
-          click: () => win.webContents.setZoomLevel(win.webContents.getZoomLevel() - 1),
-        },
-        {
-          label: "Reset Zoom",
-          accelerator: "CmdOrCtrl+0",
-          click: () => win.webContents.setZoomLevel(0),
-        },
-      ],
-    },
-    {
-      label: "Build Kit",
-      submenu: [
-        {
-          label: "Run: doctor",
-          accelerator: "CmdOrCtrl+1",
-          click: () => win.webContents.send("run-command", "ext-build doctor"),
-        },
-        {
-          label: "Run: check",
-          accelerator: "CmdOrCtrl+2",
-          click: () => win.webContents.send("run-command", "ext-build check"),
-        },
-        {
-          label: "Run: dev-verify",
-          accelerator: "CmdOrCtrl+3",
-          click: () => win.webContents.send("run-command", "ext-build dev-verify"),
-        },
-        {
-          label: "Run: simulate",
-          accelerator: "CmdOrCtrl+4",
-          click: () => win.webContents.send("run-command", "ext-build simulate"),
-        },
-      ],
-    },
-    {
-      label: "Window",
-      submenu: [
-        { label: "Minimize", accelerator: "CmdOrCtrl+M", click: () => win.minimize() },
-        { label: "Maximize / Restore", click: () => win.isMaximized() ? win.unmaximize() : win.maximize() },
-      ],
-    },
-  ];
-
+function buildMenu(window) {
+  const template = [{ label: "File", submenu: [{ label: "Open Project…", accelerator: "CmdOrCtrl+O", click: async () => { const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"] }); if (!result.canceled && result.filePaths[0]) window.webContents.send("project-opened", registerWorkspace(result.filePaths[0])); } }, { type: "separator" }, { label: "Quit", role: "quit" }] }];
+  if (!app.isPackaged) template.push({ label: "View", submenu: [{ label: "Reload", role: "reload" }, { label: "Toggle DevTools", role: "toggleDevTools" }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// ── Dependency Checks ──────────────────────────────────────────────────────
-async function checkDependencies() {
-  const results = {
-    java: { ok: false, version: null, error: null },
-    buildKit: { ok: false, path: projectRoot, error: null },
-    adobeDebug: { ok: false, status: "unknown", error: null },
-  };
-
-  // 1. Check Java
-  try {
-    const javaCheck = spawn("java", ["-version"]);
-    const versionPromise = new Promise((resolve) => {
-      let data = "";
-      javaCheck.stderr.on("data", (chunk) => { data += chunk.toString(); });
-      javaCheck.on("close", (code) => {
-        if (code === 0 || data.includes("version")) {
-          const match = data.match(/version "([^"]+)"/);
-          resolve({ ok: true, version: match ? match[1] : "detected" });
-        } else {
-          resolve({ ok: false, error: `Exit code ${code}` });
-        }
-      });
-      javaCheck.on("error", (err) => resolve({ ok: false, error: err.message }));
-    });
-    const javaResult = await versionPromise;
-    results.java = { ...results.java, ...javaResult };
-  } catch (err) {
-    results.java.error = err.message;
-  }
-
-  // 2. Check Build Kit sibling folder
-  try {
-    const bkPath = path.resolve(projectRoot, "..", "LBE Build Kit");
-    const cliPath = path.join(bkPath, "ext-build.mjs");
-    if (fs.existsSync(cliPath)) {
-      results.buildKit = { ok: true, path: bkPath };
-    } else {
-      results.buildKit = { ok: false, error: "LBE Build Kit folder or ext-build.mjs missing in sibling directory" };
-    }
-  } catch (err) {
-    results.buildKit.error = err.message;
-  }
-
-  // 3. Check Adobe PlayerDebugMode (Windows only)
-  if (process.platform === "win32") {
-    try {
-      const regCheck = spawn("reg", ["query", "HKEY_CURRENT_USER\\Software\\Adobe\\CSXS.11", "/v", "PlayerDebugMode"]);
-      const regPromise = new Promise((resolve) => {
-        let data = "";
-        regCheck.stdout.on("data", (chunk) => { data += chunk.toString(); });
-        regCheck.on("close", (code) => {
-          if (code === 0 && data.includes("0x1")) {
-            resolve({ ok: true, status: "enabled" });
-          } else {
-            resolve({ ok: false, status: "disabled or missing", error: "Run 'ext-build dev-verify' to fix" });
-          }
-        });
-        regCheck.on("error", (err) => resolve({ ok: false, error: err.message }));
-      });
-      const regResult = await regPromise;
-      results.adobeDebug = { ...results.adobeDebug, ...regResult };
-    } catch (err) {
-      results.adobeDebug.error = err.message;
-    }
-  } else {
-    results.adobeDebug = { ok: true, status: "skipped (non-windows)" };
-  }
-
-  return results;
-}
-
-ipcMain.handle("check-dependencies", async () => {
-  return await checkDependencies();
-});
-
-ipcMain.handle("git-status", async (_event, projectRoot) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  try {
-    const git = spawn("git", ["status", "--porcelain"], { cwd: projectRoot });
-    let output = "";
-    return await new Promise((resolve) => {
-      git.stdout.on("data", (d) => { output += d.toString(); });
-      git.on("close", (code) => {
-        if (code !== 0) return resolve({ ok: false, error: "git status failed" });
-        const lines = output.trim().split("\n").filter(Boolean);
-        resolve({ ok: true, dirty: lines.length > 0, changes: lines });
-      });
-      git.on("error", (err) => resolve({ ok: false, error: err.message }));
-    });
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-function runGit(projectRoot, args) {
-  return new Promise((resolve) => {
-    const git = spawn("git", args, { cwd: projectRoot });
-    let stdout = "";
-    let stderr = "";
-    git.stdout.on("data", (d) => { stdout += d.toString(); });
-    git.stderr.on("data", (d) => { stderr += d.toString(); });
-    git.on("error", (err) => resolve({ ok: false, code: -1, stdout, stderr: err.message || String(err) }));
-    git.on("close", (code) => resolve({ ok: code === 0, code, stdout, stderr }));
-  });
-}
-
-ipcMain.handle("git-branch", async (_event, projectRoot) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  try {
-    const git = spawn("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: projectRoot });
-    let output = "";
-    return await new Promise((resolve) => {
-      git.stdout.on("data", (d) => { output += d.toString(); });
-      git.on("close", (code) => {
-        if (code !== 0) return resolve({ ok: false, error: "git branch failed" });
-        resolve({ ok: true, branch: output.trim() });
-      });
-      git.on("error", (err) => resolve({ ok: false, error: err.message }));
-    });
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("git-log", async (_event, projectRoot) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  try {
-    const git = spawn("git", ["log", "-1", "--pretty=format:%h|%an|%ad|%s"], { cwd: projectRoot });
-    let output = "";
-    return await new Promise((resolve) => {
-      git.stdout.on("data", (d) => { output += d.toString(); });
-      git.on("close", (code) => {
-        if (code !== 0) return resolve({ ok: false, error: "git log failed" });
-        const [hash, author, date, subject] = output.split("|");
-        resolve({ ok: true, commit: { hash, author, date, subject } });
-      });
-      git.on("error", (err) => resolve({ ok: false, error: err.message }));
-    });
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle("git-create-branch", async (_event, projectRoot, branchName) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  if (!branchName || !String(branchName).trim()) return { ok: false, error: "Missing branchName" };
-  const safeName = String(branchName).trim();
-  const res = await runGit(projectRoot, ["checkout", "-b", safeName]);
-  if (!res.ok) {
-    return { ok: false, error: res.stderr || res.stdout || "git checkout -b failed" };
-  }
-  return { ok: true, branch: safeName };
-});
-
-ipcMain.handle("git-stage-files", async (_event, projectRoot, files = []) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  if (!Array.isArray(files) || files.length === 0) return { ok: false, error: "No files provided" };
-  const res = await runGit(projectRoot, ["add", "--", ...files]);
-  if (!res.ok) {
-    return { ok: false, error: res.stderr || res.stdout || "git add failed" };
-  }
-  return { ok: true };
-});
-
-ipcMain.handle("git-commit", async (_event, projectRoot, message) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  if (!message || !String(message).trim()) return { ok: false, error: "Missing commit message" };
-  const res = await runGit(projectRoot, ["commit", "-m", String(message).trim()]);
-  if (!res.ok) {
-    return { ok: false, error: res.stderr || res.stdout || "git commit failed" };
-  }
-  return { ok: true, output: res.stdout.trim() };
-});
-
-ipcMain.handle("git-push", async (_event, projectRoot, branchName) => {
-  if (!projectRoot) return { ok: false, error: "Missing projectRoot" };
-  if (!branchName || !String(branchName).trim()) return { ok: false, error: "Missing branch name" };
-  const branch = String(branchName).trim();
-  const res = await runGit(projectRoot, ["push", "-u", "origin", branch]);
-  if (!res.ok) {
-    return { ok: false, error: res.stderr || res.stdout || "git push failed" };
-  }
-  return { ok: true, output: res.stdout.trim() || res.stderr.trim() };
-});
-
-ipcMain.handle("open-project-dialog", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Open Project Folder",
-    properties: ["openDirectory"]
-  });
-  if (result.canceled || !result.filePaths.length) return null;
-  return result.filePaths[0];
-});
-
-ipcMain.handle("settings-load", async () => {
-  return readSettingsFile();
-});
-
-ipcMain.handle("settings-save", async (_event, payload) => {
-  return writeSettingsFile(payload);
-});
-
-ipcMain.handle("settings-reveal", async () => {
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ config: {}, profiles: [] }, null, 2), "utf8");
-  }
-  shell.showItemInFolder(SETTINGS_FILE);
-  return { ok: true, path: SETTINGS_FILE };
-});
-
-// ── Window ─────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -883,56 +320,32 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: "#0b0b0c",
-    show: false, // Don't show until ready-to-show
+    show: false,
     title: "LetterBlack CEP IDE",
     webPreferences: {
       contextIsolation: true,
-      sandbox: false,           // false so preload can use Node imports
-      preload: path.join(__dirname, "preload.mjs"),
-    },
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      preload: path.join(__dirname, "preload.mjs")
+    }
   });
-
   buildMenu(mainWindow);
-
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-  });
-
-  const url = "http://127.0.0.1:4173";
-
-  const tryLoad = () => {
-    if (!mainWindow) return;
-    mainWindow.loadURL(url).catch(() => {
-      console.log("[electron] Server not ready, retrying in 1s...");
-      setTimeout(tryLoad, 1000);
-    });
-  };
-
-  // Initial load after a small delay
-  setTimeout(tryLoad, 500);
-
-  mainWindow.webContents.on("did-finish-load", async () => {
-    const deps = await checkDependencies();
-    mainWindow.webContents.send("dependency-status", deps);
-  });
-
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => { if (!url.startsWith("http://127.0.0.1:4173/")) event.preventDefault(); });
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  const load = () => mainWindow?.loadURL(`http://127.0.0.1:4173/?token=${SESSION_TOKEN}`).catch(() => setTimeout(load, 500));
+  load();
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
+installIpcHandlers();
+app.on("second-instance", () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); } });
 app.whenReady().then(() => {
-  // Enable remote debugging on port 9222 for CDP access
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
+  if (!app.isPackaged && process.env.LBE_IDE_ENABLE_CDP === "1") app.commandLine.appendSwitch("remote-debugging-port", process.env.LBE_IDE_CDP_PORT || "9222");
   startServer();
   createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
-
-app.on("before-quit", () => {
-  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
-});
+app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("before-quit", () => { if (serverProcess) serverProcess.kill(); });

@@ -1,43 +1,90 @@
 {
   "name": "lb-cep-developer-ide",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "author": "LetterBlack",
-  "description": "LetterBlack CEP IDE — local web shell + Electron desktop wrapper.",
+  "description": "LetterBlack CEP IDE — hardened local Electron workspace for CEP development.",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
     "dev": "node ./scripts/dev-server.mjs",
-    "start": "node ./scripts/dev-server.mjs",
-    "electron": "electron --disable-gpu --disable-gpu-sandbox .",
-    "build": "electron-builder",
-    "check:structure": "node ./scripts/check-structure.mjs"
+    "start": "electron .",
+    "electron": "electron .",
+    "check:structure": "node ./scripts/check-structure.mjs",
+    "check:security": "node ./scripts/check-security.mjs",
+    "test": "npm run check:structure && npm run check:security",
+    "build": "npm test && electron-builder --win nsis",
+    "build:dir": "npm test && electron-builder --dir"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^24.13.3",
-    "electron-packager": "^17.1.2"
+    "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.letterblack.ide",
+    "appId": "com.letterblack.cepide",
     "productName": "LetterBlack CEP IDE",
+    "asar": true,
     "files": [
-      "app/**/*",
       "electron/**/*",
-      "core/**/*",
-      "adapters/**/*",
-      "browser/**/*",
-      "scripts/**/*",
+      "package.json",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "app",
+        "to": "ide-runtime/app"
+      },
+      {
+        "from": "scripts",
+        "to": "ide-runtime/scripts",
+        "filter": ["**/*", "!check-*.mjs"]
+      },
+      {
+        "from": "core",
+        "to": "ide-runtime/core"
+      },
+      {
+        "from": "adapters",
+        "to": "ide-runtime/adapters"
+      },
+      {
+        "from": "browser",
+        "to": "ide-runtime/browser"
+      },
+      {
+        "from": "config",
+        "to": "ide-runtime/config"
+      },
+      {
+        "from": "../LBE Build Kit",
+        "to": "ide-runtime/LBE Build Kit",
+        "filter": ["**/*", "!node_modules/**/*", "!dist/**/*", "!release/**/*"]
+      }
     ],
     "directories": {
       "output": "dist"
     },
+    "artifactName": "LetterBlack-CEP-IDE-${version}-${arch}.${ext}",
     "win": {
-      "target": "dir"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "publisherName": "LetterBlack"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LetterBlack CEP IDE"
     }
   }
 }
